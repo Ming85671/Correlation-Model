@@ -1,0 +1,141 @@
+import numpy as np
+import pandas as pd
+
+from src.transform import (
+    add_change_columns,
+    add_indexed_columns,
+    build_monthly_dataset,
+    monthly_baltic,
+    monthly_volume,
+)
+
+
+def test_monthly_volume_groups_by_month_and_sums_values():
+    rows = pd.DataFrame(
+        {
+            "load_start_date": ["2026-01-03", "2026-01-18", "2026-02-02"],
+            "volume": [10_000, 15_000, 20_000],
+        }
+    )
+
+    result = monthly_volume(rows, "load_start_date", "volume", "australia_volume")
+
+    assert result.to_dict("records") == [
+        {"month": pd.Timestamp("2026-01-01"), "australia_volume": 25_000},
+        {"month": pd.Timestamp("2026-02-01"), "australia_volume": 20_000},
+    ]
+
+
+def test_monthly_volume_counts_rows_when_value_column_missing():
+    rows = pd.DataFrame(
+        {
+            "discharge_start_date": ["2026-01-03", "2026-01-18", "2026-02-02"],
+        }
+    )
+
+    result = monthly_volume(rows, "discharge_start_date", None, "china_arrivals")
+
+    assert result.to_dict("records") == [
+        {"month": pd.Timestamp("2026-01-01"), "china_arrivals": 2},
+        {"month": pd.Timestamp("2026-02-01"), "china_arrivals": 1},
+    ]
+
+
+def test_monthly_baltic_averages_values_by_month():
+    rows = pd.DataFrame(
+        {
+            "date": ["2026-01-01", "2026-01-02", "2026-02-01"],
+            "value": [1000.0, 1100.0, 900.0],
+        }
+    )
+
+    result = monthly_baltic(rows, "date", "value")
+
+    assert result.to_dict("records") == [
+        {"month": pd.Timestamp("2026-01-01"), "p3a_82": 1050.0},
+        {"month": pd.Timestamp("2026-02-01"), "p3a_82": 900.0},
+    ]
+
+
+def test_build_monthly_dataset_keeps_overlapping_months_only():
+    baltic = pd.DataFrame(
+        {
+            "month": pd.to_datetime(["2026-01-01", "2026-02-01", "2026-03-01"]),
+            "p3a_82": [100.0, 110.0, 120.0],
+        }
+    )
+    australia = pd.DataFrame(
+        {
+            "month": pd.to_datetime(["2026-01-01", "2026-02-01"]),
+            "australia_volume": [10.0, 12.0],
+        }
+    )
+    indonesia = pd.DataFrame(
+        {
+            "month": pd.to_datetime(["2026-02-01", "2026-03-01"]),
+            "indonesia_volume": [20.0, 22.0],
+        }
+    )
+    china = pd.DataFrame(
+        {
+            "month": pd.to_datetime(["2026-02-01", "2026-03-01"]),
+            "china_arrivals": [30.0, 32.0],
+        }
+    )
+
+    result = build_monthly_dataset(baltic, australia, indonesia, china)
+
+    assert result.to_dict("records") == [
+        {
+            "month": pd.Timestamp("2026-02-01"),
+            "p3a_82": 110.0,
+            "australia_volume": 12.0,
+            "indonesia_volume": 20.0,
+            "china_arrivals": 30.0,
+        }
+    ]
+
+
+def test_add_indexed_columns_starts_each_series_at_100():
+    rows = pd.DataFrame({"p3a_82": [50.0, 75.0], "australia_volume": [20.0, 10.0]})
+
+    result = add_indexed_columns(rows, ["p3a_82", "australia_volume"])
+
+    assert result["p3a_82_index"].tolist() == [100.0, 150.0]
+    assert result["australia_volume_index"].tolist() == [100.0, 50.0]
+
+
+def test_add_indexed_columns_handles_zero_base_as_nan():
+    rows = pd.DataFrame({"p3a_82": [0.0, 75.0]})
+
+    result = add_indexed_columns(rows, ["p3a_82"])
+
+    assert np.isnan(result.loc[0, "p3a_82_index"])
+    assert np.isnan(result.loc[1, "p3a_82_index"])
+
+
+def test_add_change_columns_calculates_mom_and_yoy():
+    rows = pd.DataFrame(
+        {
+            "p3a_82": [
+                100.0,
+                110.0,
+                121.0,
+                130.0,
+                140.0,
+                150.0,
+                160.0,
+                170.0,
+                180.0,
+                190.0,
+                200.0,
+                210.0,
+                220.0,
+            ]
+        }
+    )
+
+    result = add_change_columns(rows, ["p3a_82"])
+
+    assert round(result.loc[1, "p3a_82_mom"], 4) == 0.1
+    assert round(result.loc[12, "p3a_82_yoy"], 4) == 1.2
