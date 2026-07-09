@@ -303,42 +303,43 @@ def render_dashboard() -> None:
         st.plotly_chart(lag_heatmap(lag_df, LABELS), use_container_width=True)
     with right:
         st.subheader("Lead/lag summary")
+
         summary = corr_df.merge(
-    best_lags,
-    on="series",
-    how="left",
-    suffixes=("", "_lag"),
-)
+            best_lags,
+            on="series",
+            how="left",
+            suffixes=("", "_lag"),
+        )
 
-# If merge created observations_x / observations_y style columns, normalize them.
-if "observations" not in summary.columns:
-    if "observations_x" in summary.columns:
-        summary["observations"] = summary["observations_x"]
-    elif "observations_lag" in summary.columns:
-        summary["observations"] = summary["observations_lag"]
-    elif "observations_y" in summary.columns:
-        summary["observations"] = summary["observations_y"]
+        if "observations" not in summary.columns:
+            if "observations_x" in summary.columns:
+                summary["observations"] = summary["observations_x"]
+            elif "observations_lag" in summary.columns:
+                summary["observations"] = summary["observations_lag"]
+            elif "observations_y" in summary.columns:
+                summary["observations"] = summary["observations_y"]
 
-summary["series"] = summary["series"].map(LABELS).fillna(summary["series"])
+        summary["series"] = summary["series"].map(LABELS).fillna(summary["series"])
 
-display_columns = [
-    "series",
-    "pearson",
-    "spearman",
-    "best_lag_months",
-    "best_lag_pearson",
-    "observations",
-]
+        display_columns = [
+            "series",
+            "pearson",
+            "spearman",
+            "best_lag_months",
+            "best_lag_pearson",
+            "observations",
+        ]
 
-for column in display_columns:
-    if column not in summary.columns:
-        summary[column] = pd.NA
+        for column in display_columns:
+            if column not in summary.columns:
+                summary[column] = pd.NA
 
-st.dataframe(
-    summary[display_columns],
-    use_container_width=True,
-    hide_index=True,
-)
+        st.dataframe(
+            summary[display_columns],
+            use_container_width=True,
+            hide_index=True,
+        )
+
         st.caption(
             "Correlation is descriptive evidence only. It should not be read as causation."
         )
