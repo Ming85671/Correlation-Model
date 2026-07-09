@@ -52,6 +52,7 @@ st.set_page_config(
     page_title="Correlation Model",
     page_icon=None,
     layout="wide",
+    initial_sidebar_state="collapsed",
 )
 
 
@@ -75,6 +76,12 @@ def apply_style() -> None:
             letter-spacing: 0;
             font-family: "Helvetica Neue", Arial, sans-serif;
         }
+        h1 {
+            font-size: 2.1rem !important;
+            line-height: 1.1 !important;
+            overflow-wrap: anywhere;
+            white-space: normal;
+        }
         div[data-testid="stMetric"] {
             border-top: 1px solid var(--rule);
             border-bottom: 1px solid var(--rule);
@@ -92,12 +99,21 @@ def apply_style() -> None:
         }
         .block-container {
             padding-top: 2rem;
+            padding-left: 2rem;
+            padding-right: 2rem;
+            max-width: none;
         }
         .caption-line {
             border-top: 1px solid var(--rule);
             color: var(--muted);
             font-size: 0.9rem;
             padding-top: 0.65rem;
+            overflow-wrap: anywhere;
+        }
+        div[data-testid="stAlert"] p,
+        div[data-testid="stMarkdownContainer"] p {
+            overflow-wrap: anywhere;
+            white-space: normal;
         }
         </style>
         """,
@@ -202,7 +218,7 @@ def render_dashboard() -> None:
     apply_style()
     st.title("Correlation Model")
     st.markdown(
-        '<div class="caption-line">Baltic P3A_82 compared with Australia coal shipments, Indonesia coal shipments, and China coal arrivals.</div>',
+        '<div class="caption-line">Baltic P3A_82 vs Australia shipments, Indonesia shipments, and China arrivals.</div>',
         unsafe_allow_html=True,
     )
 
@@ -227,11 +243,18 @@ def render_dashboard() -> None:
     try:
         axs_settings = get_database_settings(st.secrets, "axs")
         baltic_settings = get_database_settings(st.secrets, "baltic")
-    except (FileNotFoundError, KeyError, SecretsConfigError) as exc:
+    except FileNotFoundError:
+        st.error("Missing Streamlit secrets.")
+        st.info(
+            "Add [axs] and [baltic] secrets in Streamlit Cloud Settings. "
+            "Use the example secrets file as the template."
+        )
+        return
+    except (KeyError, SecretsConfigError) as exc:
         st.error(str(exc))
         st.info(
-            "Add [axs] and [baltic] secrets in Streamlit Cloud App Settings. "
-            "Use .streamlit/secrets.toml.example as the template."
+            "Add [axs] and [baltic] secrets in Streamlit Cloud Settings. "
+            "Use the example secrets file as the template."
         )
         return
 
