@@ -217,15 +217,52 @@ def discover_baltic_p3a82_source(engine: Engine, schema: str = "market_data") ->
 def fetch_baltic_p3a82(
     engine: Engine, start_date: date | datetime | str, schema: str = "market_data"
 ) -> pd.DataFrame:
-    source = discover_baltic_p3a82_source(engine, schema=schema)
+    table = "baltic_indices"
+
+    columns = _table_columns(engine, schema, table)
+
+    date_col = _first_existing_column(columns, ("Date", "date"))
+    name_col = _first_existing_column(columns, ("Name", "name"))
+    value_col = _first_existing_column(
+        columns,
+        (
+            "Value",
+            "value",
+            "Price",
+            "price",
+            "Index",
+            "index",
+            "Close",
+            "close",
+            "Settle",
+            "settle",
+            "p3a_82",
+        ),
+    )
+
+    if not date_col or not name_col or not value_col:
+        raise DataSourceError(
+            f"Could not identify Date, Name, and Value columns in {schema}.{table}. "
+            f"Available columns: {columns}"
+        )
+
     query = text(
         f"""
         SELECT
-          {_quote_identifier(source.date_column)} AS date,
-          {_quote_identifier(source.value_column)} AS value
-        FROM {_quote_identifier(source.schema)}.{_quote_identifier(source.table)}
-        WHERE {_quote_identifier(source.date_column)} >= :start_date
-        ORDER BY {_quote_identifier(source.date_column)}
+          {_quote_identifier(date_col)} AS date,
+          {_quote_identifier(value_col)} AS value
+        FROM {_quote_identifier(schema)}.{_quote_identifier(table)}
+        WHERE {_quote_identifier(name_col)} = :name
+          AND {_quote_identifier(date_col)} >= :start_date
+        ORDER BY {_quote_identifier(date_col)}
         """
     )
-    return pd.read_sql(query, engine, params={"start_date": _start_date_value(start_date)})
+
+    return pd.read_sql(
+        query,
+        engine,
+        params={
+            "name": "P3A_82",
+            "start_date": _start_date_value(start_date),
+        },
+    )
