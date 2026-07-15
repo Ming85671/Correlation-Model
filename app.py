@@ -224,9 +224,13 @@ def render_dashboard() -> None:
 
     with st.sidebar:
         st.header("Controls")
-        years = st.slider("Years", min_value=3, max_value=15, value=10, step=1)
-        max_lag = st.slider("Lead/lag window", min_value=3, max_value=24, value=12, step=1)
-        min_periods = st.slider(
+        years = st.number_input(
+            "Years", min_value=3, max_value=15, value=10, step=1
+        )
+        max_lag = st.number_input(
+            "Lead/lag window", min_value=3, max_value=24, value=12, step=1
+        )
+        min_periods = st.number_input(
             "Minimum observations", min_value=3, max_value=24, value=6, step=1
         )
         mode = st.radio(
