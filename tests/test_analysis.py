@@ -6,6 +6,8 @@ from src.analysis import (
     best_lag_summary,
     correlation_summary,
     lead_lag_correlations,
+    recommended_min_observations,
+    top_lag_relationships,
 )
 
 
@@ -129,3 +131,56 @@ def test_best_lag_summary_supports_day_column_names():
     record = result.iloc[0]
     assert record["best_lag_days"] == 3
     assert record["best_lag_pearson"] == -0.8
+
+
+def test_recommended_min_observations_uses_reliability_floor_not_best_correlation():
+    rows = pd.DataFrame(
+        {
+            "p3a_82": range(200),
+            "australia_volume": range(200),
+            "indonesia_volume": list(range(100)) + [None] * 100,
+        }
+    )
+
+    result = recommended_min_observations(
+        rows,
+        "p3a_82",
+        ["australia_volume", "indonesia_volume"],
+        "Daily",
+    )
+
+    assert result == 60
+
+
+def test_recommended_min_observations_uses_half_of_a_larger_paired_sample():
+    rows = pd.DataFrame(
+        {
+            "p3a_82": range(200),
+            "australia_volume": range(200),
+        }
+    )
+
+    result = recommended_min_observations(
+        rows,
+        "p3a_82",
+        ["australia_volume"],
+        "Daily",
+    )
+
+    assert result == 100
+
+
+def test_top_lag_relationships_ranks_all_series_by_absolute_pearson():
+    lag_rows = pd.DataFrame(
+        {
+            "series": ["australia_volume", "indonesia_volume", "china_arrivals_volume"],
+            "lag_days": [1, -3, 0],
+            "pearson": [0.4, -0.9, 0.8],
+            "observations": [100, 98, 99],
+        }
+    )
+
+    result = top_lag_relationships(lag_rows, "lag_days", limit=2)
+
+    assert result["series"].tolist() == ["indonesia_volume", "china_arrivals_volume"]
+    assert result["pearson"].tolist() == [-0.9, 0.8]

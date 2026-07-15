@@ -6,7 +6,12 @@ import pandas as pd
 import streamlit as st
 from sqlalchemy.exc import SQLAlchemyError
 
-from src.analysis import best_lag_summary, correlation_summary, lead_lag_correlations
+from src.analysis import (
+    correlation_summary,
+    lead_lag_correlations,
+    recommended_min_observations,
+    top_lag_relationships,
+)
 from src.charts import lag_heatmap, standardized_trend_figure, trend_figure
 from src.config import DatabaseSettings, SecretsConfigError, get_database_settings
 from src.data_access import (
@@ -24,7 +29,6 @@ from src.transform import (
     build_daily_dataset,
     build_monthly_dataset,
     daily_baltic,
-    daily_correlation_signals,
     monthly_baltic,
     daily_flow_metrics,
     monthly_flow_metrics,
@@ -46,7 +50,6 @@ CARGO_MEASURES = {
     "Shipment count": SHIPMENT_COUNT_COLUMNS,
     "Cargo volume": VOLUME_FLOW_COLUMNS,
 }
-DAILY_TARGET_COLUMN = "p3a_82_return"
 LABELS = {
     "p3a_82": "Baltic P3A_82",
     "australia_shipment_count": "Australia shipment count",
@@ -265,6 +268,26 @@ def latest_percent_change(df: pd.DataFrame, column: str) -> float | None:
     return float(value.iloc[-1] * 100)
 
 
+def latest_level_change(df: pd.DataFrame, column: str) -> float | None:
+    """Return the latest consecutive-observation percentage change of a level."""
+    if column not in df.columns or df.empty:
+        return None
+    values = pd.to_numeric(df[column], errors="coerce").dropna()
+    if len(values) < 2:
+        return None
+    changes = values.pct_change(fill_method=None).dropna()
+    return None if changes.empty else float(changes.iloc[-1] * 100)
+
+
+def describe_lag(lag: int, unit: str) -> str:
+    """Explain the direction of a feature lag relative to P3A."""
+    if lag == 0:
+        return "Same period"
+    if lag > 0:
+        return f"Cargo leads P3A by {lag} {unit}"
+    return f"P3A leads cargo by {abs(lag)} {unit}"
+
+
 def render_metric_row(
     latest_p3a: float | None,
     p3a_delta: float | None,
@@ -348,27 +371,8 @@ def render_dashboard() -> None:
             f"Shared data history: {history_start:%Y-%m-%d} to {history_end:%Y-%m-%d}."
         )
         if frequency == "Daily":
-            flow_window_days = st.number_input(
-                "Cargo change window (days)", min_value=1, max_value=30, value=7, step=1
-            )
-            max_lag = st.number_input(
-                "Lead/lag window (days)", min_value=0, max_value=60, value=30, step=1
-            )
-            min_periods = st.number_input(
-                "Minimum observations", min_value=60, max_value=500, value=120, step=1
-            )
             mode = None
-            st.caption(
-                "Daily mode compares P3A returns with changes in rolling cargo totals."
-            )
         else:
-            flow_window_days = None
-            max_lag = st.number_input(
-                "Lead/lag window (months)", min_value=0, max_value=24, value=12, step=1
-            )
-            min_periods = st.number_input(
-                "Minimum observations", min_value=6, max_value=60, value=12, step=1
-            )
             mode = st.radio(
                 "Trend view",
                 [
@@ -379,7 +383,8 @@ def render_dashboard() -> None:
                 ],
             )
         st.caption(
-            "Positive lag means cargo changes occur first and P3A is compared later."
+            "Lead/lag relationships and their reliability threshold are calculated automatically. "
+            "A positive lag means cargo occurs first and P3A is compared later."
         )
 
     start_date = (
@@ -402,31 +407,21 @@ def render_dashboard() -> None:
         display_start = market_days["day"].max() - pd.DateOffset(years=years)
         source_data = daily[daily["day"] >= display_start].reset_index(drop=True)
         active_flow_columns = CARGO_MEASURES[cargo_measure]
-        daily_signals = daily_correlation_signals(
-            daily, active_flow_columns, int(flow_window_days)
-        )
-        analysis_data = daily_signals[
-            daily_signals["day"] >= display_start
-        ].reset_index(drop=True)
-        target_column = DAILY_TARGET_COLUMN
-        feature_columns = [f"{column}_change" for column in active_flow_columns]
-        series_labels = {DAILY_TARGET_COLUMN: "P3A daily return"}
-        series_labels.update(
-            {
-                f"{column}_change": f"{LABELS[column]} {flow_window_days}-day change"
-                for column in active_flow_columns
-            }
-        )
+        analysis_data = source_data
+        target_column = "p3a_82"
+        feature_columns = active_flow_columns
+        series_labels = {"p3a_82": LABELS["p3a_82"]}
+        series_labels.update({column: LABELS[column] for column in active_flow_columns})
         lag_column = "lag_days"
-        best_lag_column = "best_lag_days"
         lag_title = "Lag days"
+        max_lag = 60
         latest_p3a_values = source_data["p3a_82"].dropna()
         latest_p3a = (
             float(latest_p3a_values.iloc[-1]) if not latest_p3a_values.empty else None
         )
-        p3a_delta = latest_percent_change(analysis_data, DAILY_TARGET_COLUMN)
-        dataset_title = "Daily correlation signals"
-        dataset_filename = "correlation_model_daily_signals.csv"
+        p3a_delta = latest_level_change(source_data, "p3a_82")
+        dataset_title = "Daily analysis dataset"
+        dataset_filename = "correlation_model_daily_dataset.csv"
     else:
         if monthly.empty:
             st.warning("No overlapping monthly observations were returned.")
@@ -443,8 +438,8 @@ def render_dashboard() -> None:
             {column: LABELS[column] for column in active_flow_columns}
         )
         lag_column = "lag_months"
-        best_lag_column = "best_lag_months"
         lag_title = "Lag months"
+        max_lag = 24
         latest_p3a_values = source_data["p3a_82"].dropna()
         latest_p3a = (
             float(latest_p3a_values.iloc[-1]) if not latest_p3a_values.empty else None
@@ -453,10 +448,14 @@ def render_dashboard() -> None:
         dataset_title = "Monthly analysis dataset"
         dataset_filename = "correlation_model_monthly_dataset.csv"
 
-    if len(analysis_data) < min_periods:
+    if analysis_data.empty:
         st.warning("Not enough observations for correlation analysis.")
         st.dataframe(analysis_data, use_container_width=True)
         return
+
+    min_periods = recommended_min_observations(
+        analysis_data, target_column, feature_columns, frequency
+    )
 
     corr_df = correlation_summary(
         analysis_data, target_column, feature_columns, int(min_periods)
@@ -469,7 +468,7 @@ def render_dashboard() -> None:
         int(min_periods),
         lag_column,
     )
-    best_lags = best_lag_summary(lag_df, lag_column, best_lag_column)
+    top_lags = top_lag_relationships(lag_df, lag_column, limit=10)
 
     render_metric_row(
         latest_p3a,
@@ -492,17 +491,15 @@ def render_dashboard() -> None:
             use_container_width=True,
         )
     else:
-        st.subheader("Daily movement relationship")
+        st.subheader("Daily trend")
         st.caption(
-            f"P3A daily return is correlated with the change in each {flow_window_days}-day "
-            "cargo total. This removes the misleading effect of comparing two long-term "
-            "levels that simply trend over time."
+            f"P3A levels and daily {cargo_measure.lower()} are shown on a standardized scale."
         )
         st.plotly_chart(
             standardized_trend_figure(
-                analysis_data,
+                source_data,
                 [target_column, *feature_columns],
-                "Daily trend: P3A and cargo-movement signals",
+                "Daily trend: P3A and cargo levels",
                 series_labels,
             ),
             use_container_width=True,
@@ -519,49 +516,29 @@ def render_dashboard() -> None:
             use_container_width=True,
         )
     with right:
-        st.subheader("Lead/lag summary")
-
-        summary = corr_df.merge(
-            best_lags,
-            on="series",
-            how="left",
-            suffixes=("", "_lag"),
-        )
-
-        if "observations" not in summary.columns:
-            if "observations_x" in summary.columns:
-                summary["observations"] = summary["observations_x"]
-            elif "observations_lag" in summary.columns:
-                summary["observations"] = summary["observations_lag"]
-            elif "observations_y" in summary.columns:
-                summary["observations"] = summary["observations_y"]
-
-        summary["series"] = summary["series"].map(series_labels).fillna(summary["series"])
-
-        display_columns = [
-            "series",
-            "pearson",
-            "spearman",
-            best_lag_column,
-            "best_lag_pearson",
-            "observations",
-        ]
-
-        for column in display_columns:
-            if column not in summary.columns:
-                summary[column] = pd.NA
-
-        summary_display = summary[display_columns].rename(
-            columns={best_lag_column: f"Best lag ({lag_title.lower().replace('lag ', '')})"}
-        )
-        st.dataframe(
-            summary_display,
-            use_container_width=True,
-            hide_index=True,
-        )
+        st.subheader("Top 10 lead/lag relationships")
+        if top_lags.empty:
+            st.warning("No lead/lag relationship has enough paired observations.")
+        else:
+            lag_unit = "days" if frequency == "Daily" else "months"
+            top_lags = top_lags.copy()
+            top_lags["series"] = top_lags["series"].map(series_labels).fillna(
+                top_lags["series"]
+            )
+            top_lags["relationship"] = top_lags[lag_column].map(
+                lambda lag: describe_lag(int(lag), lag_unit)
+            )
+            st.dataframe(
+                top_lags[["series", "relationship", "pearson", "observations"]],
+                use_container_width=True,
+                hide_index=True,
+            )
 
         st.caption(
-            "Correlation is descriptive evidence only. It should not be read as causation."
+            f"Automatic reliability threshold: {min_periods} paired observations. "
+            "The top 10 are ranked by absolute Pearson correlation; the sign still shows "
+            "whether the relationship moves together or in opposite directions. Correlation "
+            "is descriptive evidence only, not causation."
         )
 
     with st.expander(dataset_title, expanded=False):

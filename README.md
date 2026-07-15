@@ -17,8 +17,8 @@ The dashboard answers three practical questions:
 
 - How has Baltic P3A_82 moved against Australia coal shipments, Indonesia coal shipments, and China coal arrivals over the last 10 years?
 - What is the same-month Pearson and Spearman correlation between Baltic and each coal-flow series?
-- Which monthly lead/lag relationship shows the strongest correlation between Baltic and each flow series?
-- After cargo flows increase or decrease, does P3A tend to move in the same or opposite direction over the following days?
+- Which of the automatically ranked top 10 lead/lag relationships is strongest across Baltic and the flow series?
+- Does P3A move in the same or opposite direction as daily or monthly cargo levels?
 
 The analysis is descriptive. It is correlation evidence, not a causal model or trading signal.
 
@@ -72,19 +72,22 @@ Baltic P3A_82 is discovered from the `market_data` schema by searching for table
 - Monthly mode groups AXS shipment and arrival rows by month and averages Baltic P3A_82 by month.
 - Daily mode retains calendar-day cargo totals, including zero-flow days. Baltic stays missing on
   weekends and market holidays rather than being forward-filled.
-- Daily correlation compares P3A's return between consecutive market observations with the change
-  in each cargo series' rolling total. With a seven-day cargo window, the signal is the latest
-  seven-day total minus the preceding seven-day total.
+- Daily correlation compares P3A levels with daily cargo levels. Daily trend charts standardize
+  each series so their movements can be compared on one scale.
 - Shipment count and cargo volume are independent measures: a missing volume field remains missing
   and is never substituted with the shipment count.
 - The dashboard uses the overlapping monthly period between all four series.
 - Indexed trend charts set each visible series to 100 in the first month.
 - Change views show month-over-month and year-over-year percentage changes.
-- Lead/lag correlations are calculated over monthly lags in monthly mode and calendar-day lags in
-  daily mode.
+- Lead/lag correlations are calculated over the full automatic range of plus/minus 24 months in
+  monthly mode and plus/minus 60 calendar days in daily mode, then ranked by absolute Pearson
+  correlation across every flow and lag.
+- The minimum reliability threshold is automatic: it uses half of the smallest usable paired
+  sample, with a 60-day or 12-month floor whenever the available data can support that floor. It
+  is never chosen to maximize a correlation coefficient.
 
-Positive lag means the cargo change occurs first and P3A is compared with a later value. Negative
-lag means P3A is compared with an earlier cargo change.
+Positive lag means cargo occurs first and P3A is compared with a later value. Negative lag means
+P3A occurs first and is compared with a later cargo value.
 
 ## Streamlit Secrets
 

@@ -52,6 +52,33 @@ def correlation_summary(
     return pd.DataFrame.from_records(records)
 
 
+def recommended_min_observations(
+    df: pd.DataFrame,
+    target_col: str,
+    feature_cols: Iterable[str],
+    frequency: str,
+) -> int:
+    """Set a reliability threshold from the available paired observations.
+
+    The threshold is never optimized for the largest correlation coefficient,
+    because doing so would favor noisy small samples. It requires at least half
+    of the smallest usable series, subject to a 60-day or 12-month floor.
+    """
+    floors = {"Daily": 60, "Monthly": 12}
+    if frequency not in floors:
+        raise ValueError("frequency must be 'Daily' or 'Monthly'")
+
+    counts = [
+        len(_paired_numeric(df, target_col, feature_col)) for feature_col in feature_cols
+    ]
+    usable_counts = [count for count in counts if count > 0]
+    if not usable_counts:
+        return floors[frequency]
+
+    available = min(usable_counts)
+    return min(available, max(floors[frequency], int(np.ceil(available / 2))))
+
+
 def lead_lag_correlations(
     df: pd.DataFrame,
     target_col: str,
@@ -106,3 +133,27 @@ def best_lag_summary(
             "pearson": "best_lag_pearson",
         }
     )[["series", best_lag_column, "best_lag_pearson", "observations"]]
+
+
+def top_lag_relationships(
+    lag_df: pd.DataFrame,
+    lag_column: str,
+    limit: int = 10,
+) -> pd.DataFrame:
+    """Rank the strongest valid lead/lag relationships across all series."""
+    if limit < 1:
+        raise ValueError("limit must be at least 1")
+    if lag_df.empty:
+        return lag_df.copy()
+
+    rows = lag_df.dropna(subset=["pearson"]).copy()
+    rows["abs_pearson"] = rows["pearson"].abs()
+    return (
+        rows.sort_values(
+            ["abs_pearson", "observations", "series", lag_column],
+            ascending=[False, False, True, True],
+        )
+        .head(limit)
+        .drop(columns="abs_pearson")
+        .reset_index(drop=True)
+    )
