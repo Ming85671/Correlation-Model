@@ -74,6 +74,27 @@ def test_lead_lag_correlations_covers_full_lag_window():
     assert set(result["series"]) == {"australia_volume"}
 
 
+def test_lead_lag_correlations_supports_day_column_names():
+    rows = pd.DataFrame(
+        {
+            "p3a_82_return": list(range(10)),
+            "australia_volume_change": list(range(10)),
+        }
+    )
+
+    result = lead_lag_correlations(
+        rows,
+        "p3a_82_return",
+        ["australia_volume_change"],
+        max_lag=2,
+        min_periods=3,
+        lag_column="lag_days",
+    )
+
+    assert result["lag_days"].tolist() == [-2, -1, 0, 1, 2]
+    assert "lag_months" not in result.columns
+
+
 def test_best_lag_summary_picks_largest_absolute_correlation():
     lag_rows = pd.DataFrame(
         {
@@ -91,3 +112,20 @@ def test_best_lag_summary_picks_largest_absolute_correlation():
     assert by_series.loc["australia_volume", "best_lag_pearson"] == -0.8
     assert by_series.loc["indonesia_volume", "best_lag_months"] == 0
     assert by_series.loc["indonesia_volume", "best_lag_pearson"] == 0.5
+
+
+def test_best_lag_summary_supports_day_column_names():
+    lag_rows = pd.DataFrame(
+        {
+            "series": ["australia_volume_change", "australia_volume_change"],
+            "lag_days": [-1, 3],
+            "pearson": [0.4, -0.8],
+            "observations": [100, 98],
+        }
+    )
+
+    result = best_lag_summary(lag_rows, "lag_days", "best_lag_days")
+
+    record = result.iloc[0]
+    assert record["best_lag_days"] == 3
+    assert record["best_lag_pearson"] == -0.8

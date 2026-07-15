@@ -4,7 +4,11 @@ import pandas as pd
 from src.transform import (
     add_change_columns,
     add_indexed_columns,
+    build_daily_dataset,
     build_monthly_dataset,
+    daily_baltic,
+    daily_correlation_signals,
+    daily_volume,
     monthly_baltic,
     monthly_volume,
 )
@@ -23,6 +27,22 @@ def test_monthly_volume_groups_by_month_and_sums_values():
     assert result.to_dict("records") == [
         {"month": pd.Timestamp("2026-01-01"), "australia_volume": 25_000},
         {"month": pd.Timestamp("2026-02-01"), "australia_volume": 20_000},
+    ]
+
+
+def test_daily_volume_groups_by_calendar_day_and_sums_values():
+    rows = pd.DataFrame(
+        {
+            "load_start_date": ["2026-01-03 08:00", "2026-01-03 18:00", "2026-01-04"],
+            "volume": [10_000, 15_000, 20_000],
+        }
+    )
+
+    result = daily_volume(rows, "load_start_date", "volume", "australia_volume")
+
+    assert result.to_dict("records") == [
+        {"day": pd.Timestamp("2026-01-03"), "australia_volume": 25_000},
+        {"day": pd.Timestamp("2026-01-04"), "australia_volume": 20_000},
     ]
 
 
@@ -54,6 +74,22 @@ def test_monthly_baltic_averages_values_by_month():
     assert result.to_dict("records") == [
         {"month": pd.Timestamp("2026-01-01"), "p3a_82": 1050.0},
         {"month": pd.Timestamp("2026-02-01"), "p3a_82": 900.0},
+    ]
+
+
+def test_daily_baltic_averages_duplicate_observations_per_day():
+    rows = pd.DataFrame(
+        {
+            "date": ["2026-01-01 08:00", "2026-01-01 18:00", "2026-01-02"],
+            "value": [1000.0, 1100.0, 900.0],
+        }
+    )
+
+    result = daily_baltic(rows, "date", "value")
+
+    assert result.to_dict("records") == [
+        {"day": pd.Timestamp("2026-01-01"), "p3a_82": 1050.0},
+        {"day": pd.Timestamp("2026-01-02"), "p3a_82": 900.0},
     ]
 
 
@@ -94,6 +130,46 @@ def test_build_monthly_dataset_keeps_overlapping_months_only():
             "china_arrivals": 30.0,
         }
     ]
+
+
+def test_build_daily_dataset_keeps_zero_cargo_days_and_missing_baltic_days():
+    baltic = pd.DataFrame(
+        {
+            "day": pd.to_datetime(["2026-01-02", "2026-01-05"]),
+            "p3a_82": [100.0, 110.0],
+        }
+    )
+    australia = pd.DataFrame(
+        {"day": pd.to_datetime(["2026-01-03"]), "australia_volume": [20.0]}
+    )
+    indonesia = pd.DataFrame(columns=["day", "indonesia_volume"])
+    china = pd.DataFrame(
+        {"day": pd.to_datetime(["2026-01-04"]), "china_arrivals": [30.0]}
+    )
+
+    result = build_daily_dataset(baltic, australia, indonesia, china)
+
+    assert result["day"].tolist() == list(pd.date_range("2026-01-02", "2026-01-05"))
+    assert result["australia_volume"].tolist() == [0.0, 20.0, 0.0, 0.0]
+    assert result["china_arrivals"].tolist() == [0.0, 0.0, 30.0, 0.0]
+    assert pd.isna(result.loc[1, "p3a_82"])
+
+
+def test_daily_correlation_signals_uses_market_returns_and_rolling_flow_change():
+    rows = pd.DataFrame(
+        {
+            "day": pd.date_range("2026-01-01", periods=5, freq="D"),
+            "p3a_82": [100.0, 110.0, None, 121.0, 133.1],
+            "australia_volume": [10.0, 20.0, 30.0, 40.0, 50.0],
+        }
+    )
+
+    result = daily_correlation_signals(rows, ["australia_volume"], flow_window_days=2)
+
+    assert pd.isna(result.loc[0, "p3a_82_return"])
+    assert pd.isna(result.loc[2, "p3a_82_return"])
+    assert result["p3a_82_return"].dropna().round(4).tolist() == [0.1, 0.1, 0.1]
+    assert result["australia_volume_change"].dropna().tolist() == [40.0, 40.0]
 
 
 def test_add_indexed_columns_starts_each_series_at_100():

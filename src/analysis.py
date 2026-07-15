@@ -58,7 +58,9 @@ def lead_lag_correlations(
     feature_cols: Iterable[str],
     max_lag: int = 12,
     min_periods: int = 6,
+    lag_column: str = "lag_months",
 ) -> pd.DataFrame:
+    """Calculate correlations after shifting each feature across a lag window."""
     records: list[dict[str, float | int | str]] = []
     for feature_col in feature_cols:
         for lag in range(-max_lag, max_lag + 1):
@@ -74,7 +76,7 @@ def lead_lag_correlations(
             records.append(
                 {
                     "series": feature_col,
-                    "lag_months": lag,
+                    lag_column: lag,
                     "pearson": pearson,
                     "observations": observations,
                 }
@@ -82,24 +84,25 @@ def lead_lag_correlations(
     return pd.DataFrame.from_records(records)
 
 
-def best_lag_summary(lag_df: pd.DataFrame) -> pd.DataFrame:
+def best_lag_summary(
+    lag_df: pd.DataFrame,
+    lag_column: str = "lag_months",
+    best_lag_column: str = "best_lag_months",
+) -> pd.DataFrame:
+    """Select the strongest absolute Pearson correlation for each series."""
     if lag_df.empty:
-        return pd.DataFrame(
-            columns=["series", "best_lag_months", "best_lag_pearson", "observations"]
-        )
+        return pd.DataFrame(columns=["series", best_lag_column, "best_lag_pearson", "observations"])
 
     rows = lag_df.dropna(subset=["pearson"]).copy()
     if rows.empty:
-        return pd.DataFrame(
-            columns=["series", "best_lag_months", "best_lag_pearson", "observations"]
-        )
+        return pd.DataFrame(columns=["series", best_lag_column, "best_lag_pearson", "observations"])
 
     rows["abs_pearson"] = rows["pearson"].abs()
     best = rows.sort_values(["series", "abs_pearson"], ascending=[True, False])
     best = best.groupby("series", as_index=False).first()
     return best.rename(
         columns={
-            "lag_months": "best_lag_months",
+            lag_column: best_lag_column,
             "pearson": "best_lag_pearson",
         }
-    )[["series", "best_lag_months", "best_lag_pearson", "observations"]]
+    )[["series", best_lag_column, "best_lag_pearson", "observations"]]

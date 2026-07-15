@@ -8,7 +8,7 @@ The first release analyzes:
 - Indonesia coal shipments
 - China coal arrivals excluding China-origin cargo
 
-All series are normalized to monthly frequency over the latest 10 years available.
+The dashboard supports monthly and daily correlation views over the selected history.
 
 ## Model Scope
 
@@ -17,6 +17,7 @@ The dashboard answers three practical questions:
 - How has Baltic P3A_82 moved against Australia coal shipments, Indonesia coal shipments, and China coal arrivals over the last 10 years?
 - What is the same-month Pearson and Spearman correlation between Baltic and each coal-flow series?
 - Which monthly lead/lag relationship shows the strongest correlation between Baltic and each flow series?
+- After cargo flows increase or decrease, does P3A tend to move in the same or opposite direction over the following days?
 
 The analysis is descriptive. It is correlation evidence, not a causal model or trading signal.
 
@@ -58,14 +59,20 @@ Baltic P3A_82 is discovered from the `market_data` schema by searching for table
 
 ## Method
 
-- AXS shipment and arrival rows are grouped monthly.
-- Baltic P3A_82 is averaged monthly.
+- Monthly mode groups AXS shipment and arrival rows by month and averages Baltic P3A_82 by month.
+- Daily mode retains calendar-day cargo totals, including zero-flow days. Baltic stays missing on
+  weekends and market holidays rather than being forward-filled.
+- Daily correlation compares P3A's return between consecutive market observations with the change
+  in each cargo series' rolling total. With a seven-day cargo window, the signal is the latest
+  seven-day total minus the preceding seven-day total.
 - The dashboard uses the overlapping monthly period between all four series.
 - Indexed trend charts set each visible series to 100 in the first month.
 - Change views show month-over-month and year-over-year percentage changes.
-- Lead/lag correlations are calculated from negative to positive monthly lags.
+- Lead/lag correlations are calculated over monthly lags in monthly mode and calendar-day lags in
+  daily mode.
 
-Positive lag means the flow series is shifted forward against Baltic, so the chart compares Baltic with a later flow value. Negative lag means the flow series is shifted backward against Baltic.
+Positive lag means the cargo change occurs first and P3A is compared with a later value. Negative
+lag means P3A is compared with an earlier cargo change.
 
 ## Streamlit Secrets
 
