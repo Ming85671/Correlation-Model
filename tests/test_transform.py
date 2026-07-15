@@ -8,8 +8,10 @@ from src.transform import (
     build_monthly_dataset,
     daily_baltic,
     daily_correlation_signals,
+    daily_flow_metrics,
     daily_volume,
     monthly_baltic,
+    monthly_flow_metrics,
     monthly_volume,
 )
 
@@ -46,6 +48,36 @@ def test_daily_volume_groups_by_calendar_day_and_sums_values():
     ]
 
 
+def test_daily_flow_metrics_keeps_shipment_count_and_volume_separate():
+    rows = pd.DataFrame(
+        {
+            "load_start_date": ["2026-01-03", "2026-01-03", "2026-01-04"],
+            "volume": [10_000, 15_000, 20_000],
+        }
+    )
+
+    result = daily_flow_metrics(
+        rows,
+        "load_start_date",
+        "volume",
+        "australia_shipment_count",
+        "australia_volume",
+    )
+
+    assert result.to_dict("records") == [
+        {
+            "day": pd.Timestamp("2026-01-03"),
+            "australia_shipment_count": 2,
+            "australia_volume": 25_000,
+        },
+        {
+            "day": pd.Timestamp("2026-01-04"),
+            "australia_shipment_count": 1,
+            "australia_volume": 20_000,
+        },
+    ]
+
+
 def test_monthly_volume_counts_rows_when_value_column_missing():
     rows = pd.DataFrame(
         {
@@ -59,6 +91,23 @@ def test_monthly_volume_counts_rows_when_value_column_missing():
         {"month": pd.Timestamp("2026-01-01"), "china_arrivals": 2},
         {"month": pd.Timestamp("2026-02-01"), "china_arrivals": 1},
     ]
+
+
+def test_monthly_flow_metrics_marks_volume_unavailable_without_reusing_counts():
+    rows = pd.DataFrame(
+        {"discharge_start_date": ["2026-01-03", "2026-01-18", "2026-02-02"]}
+    )
+
+    result = monthly_flow_metrics(
+        rows,
+        "discharge_start_date",
+        None,
+        "china_arrival_count",
+        "china_arrivals_volume",
+    )
+
+    assert result["china_arrival_count"].tolist() == [2, 1]
+    assert result["china_arrivals_volume"].isna().all()
 
 
 def test_monthly_baltic_averages_values_by_month():

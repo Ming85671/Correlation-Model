@@ -44,6 +44,34 @@ def daily_volume(
     return grouped.sort_values("day").reset_index(drop=True)
 
 
+def daily_flow_metrics(
+    df: pd.DataFrame,
+    date_col: str,
+    value_col: str | None,
+    count_output_col: str,
+    volume_output_col: str,
+) -> pd.DataFrame:
+    """Aggregate daily shipment-record counts and cargo volumes separately."""
+    if df.empty:
+        return pd.DataFrame(columns=["day", count_output_col, volume_output_col])
+    if date_col not in df.columns:
+        raise KeyError(f"Missing required date column: {date_col}")
+
+    rows = df.copy()
+    rows["day"] = _day_start(rows[date_col])
+    rows = rows.dropna(subset=["day"])
+    grouped = rows.groupby("day").size().reset_index(name=count_output_col)
+    if value_col and value_col in rows.columns:
+        rows[value_col] = pd.to_numeric(rows[value_col], errors="coerce")
+        volume = rows.groupby("day", as_index=False)[value_col].sum(min_count=1)
+        grouped = grouped.merge(volume, on="day", how="left").rename(
+            columns={value_col: volume_output_col}
+        )
+    else:
+        grouped[volume_output_col] = np.nan
+    return grouped.sort_values("day").reset_index(drop=True)
+
+
 def monthly_volume(
     df: pd.DataFrame,
     date_col: str,
@@ -66,6 +94,34 @@ def monthly_volume(
     else:
         grouped = rows.groupby("month").size().reset_index(name=output_col)
 
+    return grouped.sort_values("month").reset_index(drop=True)
+
+
+def monthly_flow_metrics(
+    df: pd.DataFrame,
+    date_col: str,
+    value_col: str | None,
+    count_output_col: str,
+    volume_output_col: str,
+) -> pd.DataFrame:
+    """Aggregate monthly shipment-record counts and cargo volumes separately."""
+    if df.empty:
+        return pd.DataFrame(columns=["month", count_output_col, volume_output_col])
+    if date_col not in df.columns:
+        raise KeyError(f"Missing required date column: {date_col}")
+
+    rows = df.copy()
+    rows["month"] = _month_start(rows[date_col])
+    rows = rows.dropna(subset=["month"])
+    grouped = rows.groupby("month").size().reset_index(name=count_output_col)
+    if value_col and value_col in rows.columns:
+        rows[value_col] = pd.to_numeric(rows[value_col], errors="coerce")
+        volume = rows.groupby("month", as_index=False)[value_col].sum(min_count=1)
+        grouped = grouped.merge(volume, on="month", how="left").rename(
+            columns={value_col: volume_output_col}
+        )
+    else:
+        grouped[volume_output_col] = np.nan
     return grouped.sort_values("month").reset_index(drop=True)
 
 
@@ -133,20 +189,30 @@ def build_daily_dataset(
     Cargo-free days are meaningful observations, so they are retained as zeros.
     Baltic is left missing on weekends and market holidays rather than forward-filled.
     """
-    flow_columns = ["australia_volume", "indonesia_volume", "china_arrivals"]
+    flow_columns = list(
+        dict.fromkeys(
+            column
+            for frame in (australia, indonesia, china)
+            for column in frame.columns
+            if column != "day"
+        )
+    )
     if baltic.empty:
         return pd.DataFrame(columns=["day", "p3a_82", *flow_columns])
 
     days = pd.date_range(baltic["day"].min(), baltic["day"].max(), freq="D")
     merged = pd.DataFrame({"day": days}).merge(baltic, on="day", how="left")
-    for frame, column in zip(
-        (australia, indonesia, china), flow_columns, strict=True
-    ):
+    for frame in (australia, indonesia, china):
         if frame.empty:
-            merged[column] = 0.0
+            for column in frame.columns:
+                if column != "day":
+                    merged[column] = np.nan
         else:
             merged = merged.merge(frame, on="day", how="left")
-    merged[flow_columns] = merged[flow_columns].fillna(0.0)
+            for column in frame.columns:
+                if column == "day" or not frame[column].notna().any():
+                    continue
+                merged[column] = merged[column].fillna(0.0)
     return merged.sort_values("day").reset_index(drop=True)
 
 
@@ -175,7 +241,11 @@ def daily_correlation_signals(
     for column in flow_columns:
         if column not in df.columns:
             raise KeyError(f"Missing required flow column: {column}")
-        flow = pd.to_numeric(df[column], errors="coerce").fillna(0.0)
+        flow = pd.to_numeric(df[column], errors="coerce")
+        if flow.notna().sum() == 0:
+            result[f"{column}_change"] = np.nan
+            continue
+        flow = flow.fillna(0.0)
         rolling_total = flow.rolling(
             window=flow_window_days, min_periods=flow_window_days
         ).sum()

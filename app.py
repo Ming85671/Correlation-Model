@@ -25,33 +25,57 @@ from src.transform import (
     build_monthly_dataset,
     daily_baltic,
     daily_correlation_signals,
-    daily_volume,
     monthly_baltic,
-    monthly_volume,
+    daily_flow_metrics,
+    monthly_flow_metrics,
 )
 
 
-BASE_COLUMNS = ["p3a_82", "australia_volume", "indonesia_volume", "china_arrivals"]
-FLOW_COLUMNS = ["australia_volume", "indonesia_volume", "china_arrivals"]
+VOLUME_FLOW_COLUMNS = [
+    "australia_volume",
+    "indonesia_volume",
+    "china_arrivals_volume",
+]
+SHIPMENT_COUNT_COLUMNS = [
+    "australia_shipment_count",
+    "indonesia_shipment_count",
+    "china_arrival_count",
+]
+BASE_COLUMNS = ["p3a_82", *VOLUME_FLOW_COLUMNS, *SHIPMENT_COUNT_COLUMNS]
+CARGO_MEASURES = {
+    "Shipment count": SHIPMENT_COUNT_COLUMNS,
+    "Cargo volume": VOLUME_FLOW_COLUMNS,
+}
 DAILY_TARGET_COLUMN = "p3a_82_return"
-DAILY_FLOW_COLUMNS = [f"{column}_change" for column in FLOW_COLUMNS]
 LABELS = {
     "p3a_82": "Baltic P3A_82",
-    "australia_volume": "Australia coal shipments",
-    "indonesia_volume": "Indonesia coal shipments",
-    "china_arrivals": "China coal arrivals",
+    "australia_shipment_count": "Australia shipment count",
+    "indonesia_shipment_count": "Indonesia shipment count",
+    "china_arrival_count": "China arrival count",
+    "australia_volume": "Australia cargo volume",
+    "indonesia_volume": "Indonesia cargo volume",
+    "china_arrivals_volume": "China arrival volume",
     "p3a_82_index": "Baltic P3A_82 index",
-    "australia_volume_index": "Australia shipments index",
-    "indonesia_volume_index": "Indonesia shipments index",
-    "china_arrivals_index": "China arrivals index",
+    "australia_shipment_count_index": "Australia shipment count index",
+    "indonesia_shipment_count_index": "Indonesia shipment count index",
+    "china_arrival_count_index": "China arrival count index",
+    "australia_volume_index": "Australia cargo volume index",
+    "indonesia_volume_index": "Indonesia cargo volume index",
+    "china_arrivals_volume_index": "China arrival volume index",
     "p3a_82_mom": "Baltic P3A_82 MoM",
-    "australia_volume_mom": "Australia shipments MoM",
-    "indonesia_volume_mom": "Indonesia shipments MoM",
-    "china_arrivals_mom": "China arrivals MoM",
+    "australia_shipment_count_mom": "Australia shipment count MoM",
+    "indonesia_shipment_count_mom": "Indonesia shipment count MoM",
+    "china_arrival_count_mom": "China arrival count MoM",
+    "australia_volume_mom": "Australia cargo volume MoM",
+    "indonesia_volume_mom": "Indonesia cargo volume MoM",
+    "china_arrivals_volume_mom": "China arrival volume MoM",
     "p3a_82_yoy": "Baltic P3A_82 YoY",
-    "australia_volume_yoy": "Australia shipments YoY",
-    "indonesia_volume_yoy": "Indonesia shipments YoY",
-    "china_arrivals_yoy": "China arrivals YoY",
+    "australia_shipment_count_yoy": "Australia shipment count YoY",
+    "indonesia_shipment_count_yoy": "Indonesia shipment count YoY",
+    "china_arrival_count_yoy": "China arrival count YoY",
+    "australia_volume_yoy": "Australia cargo volume YoY",
+    "indonesia_volume_yoy": "Indonesia cargo volume YoY",
+    "china_arrivals_volume_yoy": "China arrival volume YoY",
 }
 
 
@@ -173,23 +197,26 @@ def load_datasets(
 
     value_col = "volume"
     baltic = monthly_baltic(baltic_raw, "date", "value")
-    australia = monthly_volume(
+    australia = monthly_flow_metrics(
         australia_raw,
         "date",
         value_col if value_col in australia_raw.columns else None,
+        "australia_shipment_count",
         "australia_volume",
     )
-    indonesia = monthly_volume(
+    indonesia = monthly_flow_metrics(
         indonesia_raw,
         "date",
         value_col if value_col in indonesia_raw.columns else None,
+        "indonesia_shipment_count",
         "indonesia_volume",
     )
-    china = monthly_volume(
+    china = monthly_flow_metrics(
         china_raw,
         "date",
         value_col if value_col in china_raw.columns else None,
-        "china_arrivals",
+        "china_arrival_count",
+        "china_arrivals_volume",
     )
 
     monthly = build_monthly_dataset(baltic, australia, indonesia, china)
@@ -198,23 +225,26 @@ def load_datasets(
 
     daily = build_daily_dataset(
         daily_baltic(baltic_raw, "date", "value"),
-        daily_volume(
+        daily_flow_metrics(
             australia_raw,
             "date",
             value_col if value_col in australia_raw.columns else None,
+            "australia_shipment_count",
             "australia_volume",
         ),
-        daily_volume(
+        daily_flow_metrics(
             indonesia_raw,
             "date",
             value_col if value_col in indonesia_raw.columns else None,
+            "indonesia_shipment_count",
             "indonesia_volume",
         ),
-        daily_volume(
+        daily_flow_metrics(
             china_raw,
             "date",
             value_col if value_col in china_raw.columns else None,
-            "china_arrivals",
+            "china_arrival_count",
+            "china_arrivals_volume",
         ),
     )
     return monthly, daily
@@ -258,14 +288,15 @@ def render_metric_row(
             st.metric(label, format_corr(pearson))
 
 
-def mode_columns(mode: str) -> tuple[list[str], str]:
+def mode_columns(mode: str, flow_columns: list[str]) -> tuple[list[str], str]:
+    columns = ["p3a_82", *flow_columns]
     if mode == "Absolute monthly values":
-        return BASE_COLUMNS, "Monthly value"
+        return columns, "Monthly value"
     if mode == "Month-over-month change":
-        return [f"{column}_mom" for column in BASE_COLUMNS], "MoM change"
+        return [f"{column}_mom" for column in columns], "MoM change"
     if mode == "Year-over-year change":
-        return [f"{column}_yoy" for column in BASE_COLUMNS], "YoY change"
-    return [f"{column}_index" for column in BASE_COLUMNS], "Indexed level"
+        return [f"{column}_yoy" for column in columns], "YoY change"
+    return [f"{column}_index" for column in columns], "Indexed level"
 
 
 def render_dashboard() -> None:
@@ -309,6 +340,7 @@ def render_dashboard() -> None:
     with st.sidebar:
         st.header("Controls")
         frequency = st.radio("Analysis frequency", ["Monthly", "Daily"])
+        cargo_measure = st.radio("Cargo measure", list(CARGO_MEASURES))
         years = st.number_input(
             "Years", min_value=1, max_value=max_years, value=default_years, step=1
         )
@@ -369,18 +401,22 @@ def render_dashboard() -> None:
 
         display_start = market_days["day"].max() - pd.DateOffset(years=years)
         source_data = daily[daily["day"] >= display_start].reset_index(drop=True)
-        daily_signals = daily_correlation_signals(daily, FLOW_COLUMNS, int(flow_window_days))
+        active_flow_columns = CARGO_MEASURES[cargo_measure]
+        daily_signals = daily_correlation_signals(
+            daily, active_flow_columns, int(flow_window_days)
+        )
         analysis_data = daily_signals[
             daily_signals["day"] >= display_start
         ].reset_index(drop=True)
         target_column = DAILY_TARGET_COLUMN
-        feature_columns = DAILY_FLOW_COLUMNS
-        series_labels = {
-            DAILY_TARGET_COLUMN: "P3A daily return",
-            "australia_volume_change": f"Australia {flow_window_days}-day flow change",
-            "indonesia_volume_change": f"Indonesia {flow_window_days}-day flow change",
-            "china_arrivals_change": f"China {flow_window_days}-day flow change",
-        }
+        feature_columns = [f"{column}_change" for column in active_flow_columns]
+        series_labels = {DAILY_TARGET_COLUMN: "P3A daily return"}
+        series_labels.update(
+            {
+                f"{column}_change": f"{LABELS[column]} {flow_window_days}-day change"
+                for column in active_flow_columns
+            }
+        )
         lag_column = "lag_days"
         best_lag_column = "best_lag_days"
         lag_title = "Lag days"
@@ -400,8 +436,12 @@ def render_dashboard() -> None:
         source_data = monthly[monthly["month"] >= display_start].reset_index(drop=True)
         analysis_data = source_data
         target_column = "p3a_82"
-        feature_columns = FLOW_COLUMNS
-        series_labels = LABELS
+        active_flow_columns = CARGO_MEASURES[cargo_measure]
+        feature_columns = active_flow_columns
+        series_labels = {"p3a_82": LABELS["p3a_82"]}
+        series_labels.update(
+            {column: LABELS[column] for column in active_flow_columns}
+        )
         lag_column = "lag_months"
         best_lag_column = "best_lag_months"
         lag_title = "Lag months"
@@ -436,11 +476,11 @@ def render_dashboard() -> None:
         p3a_delta,
         corr_df,
         feature_columns,
-        [LABELS[column] for column in FLOW_COLUMNS],
+        [LABELS[column] for column in active_flow_columns],
     )
 
     if frequency == "Monthly":
-        trend_columns, value_title = mode_columns(mode)
+        trend_columns, value_title = mode_columns(mode, active_flow_columns)
         st.plotly_chart(
             trend_figure(
                 source_data,
