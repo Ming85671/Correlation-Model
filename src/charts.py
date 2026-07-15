@@ -40,6 +40,39 @@ def trend_figure(
     return fig
 
 
+def standardized_trend_figure(
+    df: pd.DataFrame,
+    columns: list[str],
+    title: str,
+    labels: dict[str, str] | None = None,
+    time_column: str = "day",
+    time_label: str = "Day",
+) -> go.Figure:
+    """Plot series on a common z-score scale while preserving their daily shape.
+
+    This makes daily P3A returns and cargo-volume changes visually comparable
+    without implying that their original units are interchangeable.
+    """
+    standardized = df[[time_column, *columns]].copy()
+    for column in columns:
+        values = pd.to_numeric(standardized[column], errors="coerce")
+        standard_deviation = values.std()
+        if pd.isna(standard_deviation) or standard_deviation == 0:
+            standardized[column] = pd.NA
+        else:
+            standardized[column] = (values - values.mean()) / standard_deviation
+
+    return trend_figure(
+        standardized,
+        columns,
+        title,
+        labels,
+        "Standard deviations from each series' average",
+        time_column,
+        time_label,
+    )
+
+
 def lag_heatmap(
     lag_df: pd.DataFrame,
     labels: dict[str, str] | None = None,

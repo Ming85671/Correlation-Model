@@ -7,12 +7,13 @@ import streamlit as st
 from sqlalchemy.exc import SQLAlchemyError
 
 from src.analysis import best_lag_summary, correlation_summary, lead_lag_correlations
-from src.charts import lag_heatmap, trend_figure
+from src.charts import lag_heatmap, standardized_trend_figure, trend_figure
 from src.config import DatabaseSettings, SecretsConfigError, get_database_settings
 from src.data_access import (
     DataSourceError,
     create_mysql_engine,
     fetch_australia_shipments,
+    fetch_analysis_date_bounds,
     fetch_baltic_p3a82,
     fetch_china_arrivals,
     fetch_indonesia_shipments,
@@ -130,6 +131,27 @@ def apply_style() -> None:
 @st.cache_resource(show_spinner=False)
 def engine_for(settings: DatabaseSettings):
     return create_mysql_engine(settings)
+
+
+@st.cache_data(ttl=60 * 60 * 6, show_spinner="Checking available history...")
+def available_history_bounds(
+    axs_settings: DatabaseSettings,
+    baltic_settings: DatabaseSettings,
+) -> tuple[date, date]:
+    """Return the date range shared by all series required by the dashboard."""
+    return fetch_analysis_date_bounds(
+        engine_for(axs_settings),
+        engine_for(baltic_settings),
+        baltic_settings.database,
+    )
+
+
+def complete_history_years(start_date: date, end_date: date) -> int:
+    """Return the number of full years between two inclusive history bounds."""
+    years = end_date.year - start_date.year
+    if (end_date.month, end_date.day) < (start_date.month, start_date.day):
+        years -= 1
+    return max(1, years)
 
 
 @st.cache_data(ttl=60 * 60 * 6, show_spinner="Loading database series...")
@@ -254,11 +276,44 @@ def render_dashboard() -> None:
         unsafe_allow_html=True,
     )
 
+    try:
+        axs_settings = get_database_settings(st.secrets, "axs")
+        baltic_settings = get_database_settings(st.secrets, "baltic")
+    except FileNotFoundError:
+        st.error("Missing Streamlit secrets.")
+        st.info(
+            "Add [axs] and [baltic] secrets in Streamlit Cloud Settings. "
+            "Use the example secrets file as the template."
+        )
+        return
+    except (KeyError, SecretsConfigError) as exc:
+        st.error(str(exc))
+        st.info(
+            "Add [axs] and [baltic] secrets in Streamlit Cloud Settings. "
+            "Use the example secrets file as the template."
+        )
+        return
+
+    try:
+        history_start, history_end = available_history_bounds(
+            axs_settings, baltic_settings
+        )
+    except (DataSourceError, SQLAlchemyError, KeyError, ValueError) as exc:
+        st.error("Unable to determine the available history.")
+        st.info(str(exc))
+        return
+
+    max_years = complete_history_years(history_start, history_end)
+    default_years = min(10, max_years)
+
     with st.sidebar:
         st.header("Controls")
         frequency = st.radio("Analysis frequency", ["Monthly", "Daily"])
         years = st.number_input(
-            "Years", min_value=1, max_value=15, value=10, step=1
+            "Years", min_value=1, max_value=max_years, value=default_years, step=1
+        )
+        st.caption(
+            f"Shared data history: {history_start:%Y-%m-%d} to {history_end:%Y-%m-%d}."
         )
         if frequency == "Daily":
             flow_window_days = st.number_input(
@@ -295,25 +350,9 @@ def render_dashboard() -> None:
             "Positive lag means cargo changes occur first and P3A is compared later."
         )
 
-    try:
-        axs_settings = get_database_settings(st.secrets, "axs")
-        baltic_settings = get_database_settings(st.secrets, "baltic")
-    except FileNotFoundError:
-        st.error("Missing Streamlit secrets.")
-        st.info(
-            "Add [axs] and [baltic] secrets in Streamlit Cloud Settings. "
-            "Use the example secrets file as the template."
-        )
-        return
-    except (KeyError, SecretsConfigError) as exc:
-        st.error(str(exc))
-        st.info(
-            "Add [axs] and [baltic] secrets in Streamlit Cloud Settings. "
-            "Use the example secrets file as the template."
-        )
-        return
-
-    start_date = (pd.Timestamp.today().normalize() - pd.DateOffset(years=years + 1)).date()
+    start_date = (
+        pd.Timestamp(history_end) - pd.DateOffset(years=int(years) + 1)
+    ).date()
 
     try:
         monthly, daily = load_datasets(axs_settings, baltic_settings, start_date)
@@ -418,6 +457,19 @@ def render_dashboard() -> None:
             f"P3A daily return is correlated with the change in each {flow_window_days}-day "
             "cargo total. This removes the misleading effect of comparing two long-term "
             "levels that simply trend over time."
+        )
+        st.plotly_chart(
+            standardized_trend_figure(
+                analysis_data,
+                [target_column, *feature_columns],
+                "Daily trend: P3A and cargo-movement signals",
+                series_labels,
+            ),
+            use_container_width=True,
+        )
+        st.caption(
+            "Each line is standardized around its own average: 0 is typical, while +1 and -1 "
+            "are one standard deviation above and below that series' average."
         )
 
     left, right = st.columns([1.15, 0.85])

@@ -121,6 +121,49 @@ def _fetch_axs_rows(
     return pd.read_sql(query, engine, params=query_params)
 
 
+def _fetch_axs_date_bounds(
+    engine: Engine,
+    date_col: str,
+    filters: str,
+    params: dict[str, object],
+) -> tuple[date, date]:
+    """Return the earliest and latest dates for one filtered AXS series."""
+    query = text(
+        f"""
+        SELECT
+          MIN({_quote_identifier(date_col)}) AS earliest_date,
+          MAX({_quote_identifier(date_col)}) AS latest_date
+        FROM {_quote_identifier(AXS_SCHEMA)}.{_quote_identifier(AXS_TABLE)}
+        WHERE {filters}
+        """
+    )
+    rows = pd.read_sql(query, engine, params=params)
+    return _read_date_bounds(rows, "AXS series")
+
+
+def _read_date_bounds(rows: pd.DataFrame, source_name: str) -> tuple[date, date]:
+    if rows.empty:
+        raise DataSourceError(f"No date bounds were returned for {source_name}.")
+
+    earliest = pd.to_datetime(rows.loc[0, "earliest_date"], errors="coerce")
+    latest = pd.to_datetime(rows.loc[0, "latest_date"], errors="coerce")
+    if pd.isna(earliest) or pd.isna(latest):
+        raise DataSourceError(f"No dated observations were found for {source_name}.")
+    return earliest.date(), latest.date()
+
+
+def _common_date_bounds(bounds: Iterable[tuple[date, date]]) -> tuple[date, date]:
+    values = list(bounds)
+    if not values:
+        raise DataSourceError("No source date bounds were provided.")
+
+    earliest = max(start for start, _ in values)
+    latest = min(end for _, end in values)
+    if earliest > latest:
+        raise DataSourceError("The required series do not have an overlapping date range.")
+    return earliest, latest
+
+
 def fetch_australia_shipments(
     engine: Engine, start_date: date | datetime | str
 ) -> pd.DataFrame:
@@ -164,6 +207,71 @@ def fetch_china_arrivals(engine: Engine, start_date: date | datetime | str) -> p
             "discharge_country": "China",
             "excluded_load_country": "China",
         },
+    )
+
+
+def fetch_analysis_date_bounds(
+    axs_engine: Engine,
+    baltic_engine: Engine,
+    baltic_schema: str = "market_data",
+) -> tuple[date, date]:
+    """Return the shared history available across all four dashboard series."""
+    australia_bounds = _fetch_axs_date_bounds(
+        axs_engine,
+        "load_start_date",
+        "load_country = :load_country "
+        "AND voyage_type = :voyage_type "
+        "AND COMMODITY LIKE :commodity",
+        {
+            "load_country": "Australia",
+            "voyage_type": "laden",
+            "commodity": "%COAL%",
+        },
+    )
+    indonesia_bounds = _fetch_axs_date_bounds(
+        axs_engine,
+        "load_start_date",
+        "COMMODITY LIKE :commodity AND load_country = :load_country",
+        {"commodity": "%COAL%", "load_country": "Indonesia"},
+    )
+    china_bounds = _fetch_axs_date_bounds(
+        axs_engine,
+        "discharge_start_date",
+        "COMMODITY LIKE :commodity "
+        "AND discharge_country = :discharge_country "
+        "AND load_country <> :excluded_load_country",
+        {
+            "commodity": "%COAL%",
+            "discharge_country": "China",
+            "excluded_load_country": "China",
+        },
+    )
+
+    table = "baltic_indices"
+    columns = _table_columns(baltic_engine, baltic_schema, table)
+    date_col = _first_existing_column(columns, ("Date", "date"))
+    name_col = _first_existing_column(columns, ("Name", "name"))
+    if not date_col or not name_col:
+        raise DataSourceError(
+            f"Could not identify Date and Name columns in {baltic_schema}.{table}. "
+            f"Available columns: {columns}"
+        )
+
+    baltic_query = text(
+        f"""
+        SELECT
+          MIN({_quote_identifier(date_col)}) AS earliest_date,
+          MAX({_quote_identifier(date_col)}) AS latest_date
+        FROM {_quote_identifier(baltic_schema)}.{_quote_identifier(table)}
+        WHERE {_quote_identifier(name_col)} = :name
+        """
+    )
+    baltic_bounds = _read_date_bounds(
+        pd.read_sql(baltic_query, baltic_engine, params={"name": "P3A_82"}),
+        "Baltic P3A_82",
+    )
+    return _common_date_bounds(
+        [australia_bounds, indonesia_bounds, china_bounds, baltic_bounds]
     )
 
 
