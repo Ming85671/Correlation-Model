@@ -48,38 +48,38 @@ SHIPMENT_COUNT_COLUMNS = [
 BASE_COLUMNS = ["p3a_82", *VOLUME_FLOW_COLUMNS, *SHIPMENT_COUNT_COLUMNS]
 CARGO_MEASURES = {
     "Shipment count": SHIPMENT_COUNT_COLUMNS,
-    "Cargo capacity (DWT proxy)": VOLUME_FLOW_COLUMNS,
+    "Cargo volume": VOLUME_FLOW_COLUMNS,
 }
-DATASET_CACHE_VERSION = "cargo-capacity-proxy-v7"
+DATASET_CACHE_VERSION = "voy-intake-cargo-volume-v8"
 LABELS = {
     "p3a_82": "Baltic P3A_82",
     "australia_shipment_count": "Australia shipment count",
     "indonesia_shipment_count": "Indonesia shipment count",
     "china_arrival_count": "China arrival count",
-    "australia_volume": "Australia DWT capacity proxy",
-    "indonesia_volume": "Indonesia DWT capacity proxy",
-    "china_arrivals_volume": "China arrival DWT capacity proxy",
+    "australia_volume": "Australia cargo volume",
+    "indonesia_volume": "Indonesia cargo volume",
+    "china_arrivals_volume": "China arrival volume",
     "p3a_82_index": "Baltic P3A_82 index",
     "australia_shipment_count_index": "Australia shipment count index",
     "indonesia_shipment_count_index": "Indonesia shipment count index",
     "china_arrival_count_index": "China arrival count index",
-    "australia_volume_index": "Australia DWT capacity proxy index",
-    "indonesia_volume_index": "Indonesia DWT capacity proxy index",
-    "china_arrivals_volume_index": "China arrival DWT capacity proxy index",
+    "australia_volume_index": "Australia cargo volume index",
+    "indonesia_volume_index": "Indonesia cargo volume index",
+    "china_arrivals_volume_index": "China arrival volume index",
     "p3a_82_mom": "Baltic P3A_82 MoM",
     "australia_shipment_count_mom": "Australia shipment count MoM",
     "indonesia_shipment_count_mom": "Indonesia shipment count MoM",
     "china_arrival_count_mom": "China arrival count MoM",
-    "australia_volume_mom": "Australia DWT capacity proxy MoM",
-    "indonesia_volume_mom": "Indonesia DWT capacity proxy MoM",
-    "china_arrivals_volume_mom": "China arrival DWT capacity proxy MoM",
+    "australia_volume_mom": "Australia cargo volume MoM",
+    "indonesia_volume_mom": "Indonesia cargo volume MoM",
+    "china_arrivals_volume_mom": "China arrival volume MoM",
     "p3a_82_yoy": "Baltic P3A_82 YoY",
     "australia_shipment_count_yoy": "Australia shipment count YoY",
     "indonesia_shipment_count_yoy": "Indonesia shipment count YoY",
     "china_arrival_count_yoy": "China arrival count YoY",
-    "australia_volume_yoy": "Australia DWT capacity proxy YoY",
-    "indonesia_volume_yoy": "Indonesia DWT capacity proxy YoY",
-    "china_arrivals_volume_yoy": "China arrival DWT capacity proxy YoY",
+    "australia_volume_yoy": "Australia cargo volume YoY",
+    "indonesia_volume_yoy": "Indonesia cargo volume YoY",
+    "china_arrivals_volume_yoy": "China arrival volume YoY",
 }
 
 
@@ -516,10 +516,7 @@ def render_dashboard() -> None:
     st.caption(
         "Cargo cards show the same-period Pearson correlation with P3A; they do not show source totals."
     )
-    if cargo_measure == "Cargo capacity (DWT proxy)":
-        st.caption(
-            "AXS does not provide cargo tonnage. This view uses vessel DWT as a capacity proxy, not actual cargo carried."
-        )
+    if cargo_measure == "Cargo volume":
         unavailable = [
             column
             for column in active_flow_columns
@@ -542,7 +539,7 @@ def render_dashboard() -> None:
                         if related_columns:
                             st.code(", ".join(related_columns), language=None)
                         else:
-                            st.caption("No cargo- or capacity-related source fields found.")
+                            st.caption("No cargo-volume source fields found.")
 
     if frequency == "Monthly":
         trend_columns, value_title = mode_columns(mode, active_flow_columns)

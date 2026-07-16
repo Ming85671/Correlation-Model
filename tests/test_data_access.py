@@ -2,7 +2,6 @@ import pandas as pd
 
 from src.data_access import (
     AXS_VOLUME_CANDIDATES,
-    _axs_capacity_columns,
     _axs_volume_columns,
     _axs_volume_related_columns,
     _best_volume_column,
@@ -30,14 +29,8 @@ def test_volume_column_detection_considers_all_matching_columns():
     ]
 
 
-def test_volume_related_column_detection_includes_dwt_without_using_it_as_volume():
-    assert _axs_volume_related_columns(["date", "vessel_dwt", "commodity"]) == [
-        "vessel_dwt"
-    ]
-
-
-def test_capacity_column_detection_supports_axs_vessel_dwt():
-    assert _axs_capacity_columns(["date", "vsl_dwt"]) == ["vsl_dwt"]
+def test_volume_column_detection_supports_voy_intake_mt():
+    assert _find_axs_volume_column(["date", "voy_intake_mt"]) == "voy_intake_mt"
 
 
 def test_best_volume_column_ignores_empty_or_constant_candidates():

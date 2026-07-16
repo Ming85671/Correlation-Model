@@ -26,6 +26,7 @@ class BalticSource:
 AXS_SCHEMA = "axs"
 AXS_TABLE = "axs"
 AXS_VOLUME_CANDIDATES = (
+    "voy_intake_mt",
     "cargo_quantity",
     "cargo_qty",
     "cargo_volume",
@@ -41,13 +42,6 @@ AXS_VOLUME_CANDIDATES = (
     "metric_tons",
     "tonnes",
     "tons",
-)
-AXS_CAPACITY_CANDIDATES = (
-    "vsl_dwt",
-    "vessel_dwt",
-    "dwt",
-    "deadweight_tonnage",
-    "deadweight",
 )
 BALTIC_DATE_CANDIDATES = (
     "date",
@@ -139,7 +133,7 @@ def _axs_volume_columns(columns: Iterable[str]) -> list[str]:
 
 
 def _axs_volume_related_columns(columns: Iterable[str]) -> list[str]:
-    """List source fields that may describe cargo quantity or vessel capacity."""
+    """List source fields that may describe cargo quantity."""
     tokens = (
         "cargo",
         "quantity",
@@ -148,27 +142,12 @@ def _axs_volume_related_columns(columns: Iterable[str]) -> list[str]:
         "tonnage",
         "ton",
         "weight",
-        "dwt",
-        "deadweight",
-        "capacity",
     )
     return [
         column
         for column in columns
         if any(token in _normalize(column) for token in tokens)
     ]
-
-
-def _axs_capacity_columns(columns: Iterable[str]) -> list[str]:
-    """Return vessel-capacity fields that can be used only as a DWT proxy."""
-    column_list = list(columns)
-    by_normalized = {_normalize(column): column for column in column_list}
-    matches: list[str] = []
-    for candidate in AXS_CAPACITY_CANDIDATES:
-        match = by_normalized.get(_normalize(candidate))
-        if match and match not in matches:
-            matches.append(match)
-    return matches
 
 
 def _find_axs_volume_column(columns: Iterable[str]) -> str | None:
@@ -226,13 +205,10 @@ def _fetch_axs_rows(
 ) -> pd.DataFrame:
     columns = _table_columns(engine, AXS_SCHEMA, AXS_TABLE)
     volume_columns = _axs_volume_columns(columns)
-    capacity_columns = _axs_capacity_columns(columns)
     related_columns = _axs_volume_related_columns(columns)
-    measurement_columns = volume_columns or capacity_columns
-    measurement_basis = "cargo volume" if volume_columns else "vessel DWT capacity proxy"
     selected = [f"{_quote_identifier(date_col)} AS date"]
-    for index, measurement_column in enumerate(measurement_columns):
-        selected.append(f"{_quote_identifier(measurement_column)} AS volume_{index}")
+    for index, volume_column in enumerate(volume_columns):
+        selected.append(f"{_quote_identifier(volume_column)} AS volume_{index}")
 
     query = text(
         f"""
@@ -247,36 +223,36 @@ def _fetch_axs_rows(
     if params:
         query_params.update(params)
     rows = pd.read_sql(query, engine, params=query_params)
-    if not measurement_columns:
+    if not volume_columns:
         rows.attrs["volume_candidate_stats"] = []
         rows.attrs["selected_volume_column"] = None
         rows.attrs["volume_related_columns"] = related_columns
         rows.attrs["measurement_basis"] = None
         return rows
 
-    aliases = [f"volume_{index}" for index in range(len(measurement_columns))]
+    aliases = [f"volume_{index}" for index in range(len(volume_columns))]
     candidate_stats = _volume_candidate_stats(rows, aliases)
     selected_alias = _best_volume_column(rows, aliases)
     if selected_alias is None:
         result = rows[["date"]].copy()
         result.attrs["volume_candidate_stats"] = [
-            {**stat, "column": measurement_columns[index]}
+            {**stat, "column": volume_columns[index]}
             for index, stat in enumerate(candidate_stats)
         ]
         result.attrs["selected_volume_column"] = None
         result.attrs["volume_related_columns"] = related_columns
-        result.attrs["measurement_basis"] = measurement_basis
+        result.attrs["measurement_basis"] = "cargo volume"
         return result
 
     result = rows[["date", selected_alias]].rename(columns={selected_alias: "volume"})
     selected_index = aliases.index(selected_alias)
     result.attrs["volume_candidate_stats"] = [
-        {**stat, "column": measurement_columns[index]}
+        {**stat, "column": volume_columns[index]}
         for index, stat in enumerate(candidate_stats)
     ]
-    result.attrs["selected_volume_column"] = measurement_columns[selected_index]
+    result.attrs["selected_volume_column"] = volume_columns[selected_index]
     result.attrs["volume_related_columns"] = related_columns
-    result.attrs["measurement_basis"] = measurement_basis
+    result.attrs["measurement_basis"] = "cargo volume"
     return result
 
 
