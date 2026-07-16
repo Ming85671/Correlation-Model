@@ -50,7 +50,7 @@ CARGO_MEASURES = {
     "Shipment count": SHIPMENT_COUNT_COLUMNS,
     "Cargo volume": VOLUME_FLOW_COLUMNS,
 }
-DATASET_CACHE_VERSION = "cargo-volume-selection-v4"
+DATASET_CACHE_VERSION = "cargo-volume-status-v5"
 LABELS = {
     "p3a_82": "Baltic P3A_82",
     "australia_shipment_count": "Australia shipment count",
@@ -193,7 +193,7 @@ def load_datasets(
     baltic_settings: DatabaseSettings,
     start_date: date,
     cache_version: str,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, list[dict[str, int | str]]]]:
     """Load the source series and return monthly and calendar-day datasets."""
     axs_engine = engine_for(axs_settings)
     baltic_engine = engine_for(baltic_settings)
@@ -257,7 +257,12 @@ def load_datasets(
             "china_arrivals_volume",
         ),
     )
-    return monthly, daily
+    volume_status = {
+        "Australia": australia_raw.attrs.get("volume_candidate_stats", []),
+        "Indonesia": indonesia_raw.attrs.get("volume_candidate_stats", []),
+        "China": china_raw.attrs.get("volume_candidate_stats", []),
+    }
+    return monthly, daily, volume_status
 
 
 def format_corr(value: float) -> str:
@@ -406,7 +411,7 @@ def render_dashboard() -> None:
     ).date()
 
     try:
-        monthly, daily = load_datasets(
+        monthly, daily, volume_status = load_datasets(
             axs_settings,
             baltic_settings,
             start_date,
@@ -499,6 +504,21 @@ def render_dashboard() -> None:
     st.caption(
         "Cargo cards show the same-period Pearson correlation with P3A; they do not show cargo totals."
     )
+    if cargo_measure == "Cargo volume":
+        unavailable = [
+            column
+            for column in active_flow_columns
+            if source_data[column].notna().sum() == 0
+        ]
+        if unavailable:
+            st.warning(
+                "The AXS source has no usable cargo-volume values for the selected flow. "
+                "See the data-status panel for the source-field check."
+            )
+            with st.expander("Cargo-volume source status"):
+                for flow, status in volume_status.items():
+                    st.caption(flow)
+                    st.dataframe(pd.DataFrame(status), hide_index=True)
 
     if frequency == "Monthly":
         trend_columns, value_title = mode_columns(mode, active_flow_columns)

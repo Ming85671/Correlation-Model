@@ -160,6 +160,23 @@ def _best_volume_column(rows: pd.DataFrame, candidates: list[str]) -> str | None
     return best_column
 
 
+def _volume_candidate_stats(
+    rows: pd.DataFrame, candidates: list[str]
+) -> list[dict[str, int | str]]:
+    """Summarize usable values without exposing any cargo records."""
+    stats: list[dict[str, int | str]] = []
+    for column in candidates:
+        values = _numeric_volume_values(rows[column]).dropna()
+        stats.append(
+            {
+                "column": column,
+                "numeric_observations": len(values),
+                "distinct_values": values.nunique(),
+            }
+        )
+    return stats
+
+
 def _fetch_axs_rows(
     engine: Engine,
     start_date: date | datetime | str,
@@ -187,14 +204,30 @@ def _fetch_axs_rows(
         query_params.update(params)
     rows = pd.read_sql(query, engine, params=query_params)
     if not volume_columns:
+        rows.attrs["volume_candidate_stats"] = []
+        rows.attrs["selected_volume_column"] = None
         return rows
 
     aliases = [f"volume_{index}" for index in range(len(volume_columns))]
+    candidate_stats = _volume_candidate_stats(rows, aliases)
     selected_alias = _best_volume_column(rows, aliases)
     if selected_alias is None:
-        return rows[["date"]]
+        result = rows[["date"]].copy()
+        result.attrs["volume_candidate_stats"] = [
+            {**stat, "column": volume_columns[index]}
+            for index, stat in enumerate(candidate_stats)
+        ]
+        result.attrs["selected_volume_column"] = None
+        return result
 
-    return rows[["date", selected_alias]].rename(columns={selected_alias: "volume"})
+    result = rows[["date", selected_alias]].rename(columns={selected_alias: "volume"})
+    selected_index = aliases.index(selected_alias)
+    result.attrs["volume_candidate_stats"] = [
+        {**stat, "column": volume_columns[index]}
+        for index, stat in enumerate(candidate_stats)
+    ]
+    result.attrs["selected_volume_column"] = volume_columns[selected_index]
+    return result
 
 
 def _fetch_axs_date_bounds(

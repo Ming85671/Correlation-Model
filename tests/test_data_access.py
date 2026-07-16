@@ -6,6 +6,7 @@ from src.data_access import (
     _best_volume_column,
     _find_axs_volume_column,
     _first_existing_column,
+    _volume_candidate_stats,
 )
 
 
@@ -37,3 +38,11 @@ def test_best_volume_column_ignores_empty_or_constant_candidates():
     )
 
     assert _best_volume_column(rows, ["volume_0", "volume_1", "volume_2"]) == "volume_2"
+
+
+def test_volume_candidate_stats_reports_numeric_and_distinct_counts():
+    rows = pd.DataFrame({"volume_0": ["10,000 MT", None, "10,000 MT"]})
+
+    assert _volume_candidate_stats(rows, ["volume_0"]) == [
+        {"column": "volume_0", "numeric_observations": 2, "distinct_values": 1}
+    ]
