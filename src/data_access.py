@@ -99,12 +99,15 @@ def _first_existing_column(columns: Iterable[str], candidates: Iterable[str]) ->
     return None
 
 
-def _find_axs_volume_column(columns: Iterable[str]) -> str | None:
-    """Find the cargo-volume field, including source-specific unit suffixes."""
+def _axs_volume_columns(columns: Iterable[str]) -> list[str]:
+    """Return all cargo-volume candidates, including source-specific unit suffixes."""
     column_list = list(columns)
-    exact_match = _first_existing_column(column_list, AXS_VOLUME_CANDIDATES)
-    if exact_match:
-        return exact_match
+    by_normalized = {_normalize(column): column for column in column_list}
+    matches: list[str] = []
+    for candidate in AXS_VOLUME_CANDIDATES:
+        match = by_normalized.get(_normalize(candidate))
+        if match and match not in matches:
+            matches.append(match)
 
     volume_tokens = (
         "quantity",
@@ -119,9 +122,42 @@ def _find_axs_volume_column(columns: Iterable[str]) -> str | None:
     )
     for column in column_list:
         normalized = _normalize(column)
-        if "cargo" in normalized and any(token in normalized for token in volume_tokens):
-            return column
-    return None
+        if (
+            "cargo" in normalized
+            and any(token in normalized for token in volume_tokens)
+            and column not in matches
+        ):
+            matches.append(column)
+    return matches
+
+
+def _find_axs_volume_column(columns: Iterable[str]) -> str | None:
+    """Find the first cargo-volume field for callers that need one candidate."""
+    matches = _axs_volume_columns(columns)
+    return matches[0] if matches else None
+
+
+def _numeric_volume_values(values: pd.Series) -> pd.Series:
+    normalized = (
+        values.astype("string")
+        .str.replace(",", "", regex=False)
+        .str.replace(r"(?i)\s*(?:mt|metric tons?|tonnes?|tons?)\s*$", "", regex=True)
+    )
+    return pd.to_numeric(normalized, errors="coerce")
+
+
+def _best_volume_column(rows: pd.DataFrame, candidates: list[str]) -> str | None:
+    """Select the candidate with the most usable, non-constant cargo observations."""
+    best_column: str | None = None
+    best_score = (0, 0, 0)
+    for position, column in enumerate(candidates):
+        values = _numeric_volume_values(rows[column])
+        usable = values.dropna()
+        score = (len(usable), usable.nunique(), -position)
+        if usable.nunique() > 1 and score > best_score:
+            best_column = column
+            best_score = score
+    return best_column
 
 
 def _fetch_axs_rows(
@@ -132,10 +168,10 @@ def _fetch_axs_rows(
     params: dict[str, object] | None = None,
 ) -> pd.DataFrame:
     columns = _table_columns(engine, AXS_SCHEMA, AXS_TABLE)
-    volume_col = _find_axs_volume_column(columns)
+    volume_columns = _axs_volume_columns(columns)
     selected = [f"{_quote_identifier(date_col)} AS date"]
-    if volume_col:
-        selected.append(f"{_quote_identifier(volume_col)} AS volume")
+    for index, volume_column in enumerate(volume_columns):
+        selected.append(f"{_quote_identifier(volume_column)} AS volume_{index}")
 
     query = text(
         f"""
@@ -149,7 +185,16 @@ def _fetch_axs_rows(
     query_params: dict[str, object] = {"start_date": _start_date_value(start_date)}
     if params:
         query_params.update(params)
-    return pd.read_sql(query, engine, params=query_params)
+    rows = pd.read_sql(query, engine, params=query_params)
+    if not volume_columns:
+        return rows
+
+    aliases = [f"volume_{index}" for index in range(len(volume_columns))]
+    selected_alias = _best_volume_column(rows, aliases)
+    if selected_alias is None:
+        return rows[["date"]]
+
+    return rows[["date", selected_alias]].rename(columns={selected_alias: "volume"})
 
 
 def _fetch_axs_date_bounds(

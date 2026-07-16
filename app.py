@@ -50,7 +50,7 @@ CARGO_MEASURES = {
     "Shipment count": SHIPMENT_COUNT_COLUMNS,
     "Cargo volume": VOLUME_FLOW_COLUMNS,
 }
-DATASET_CACHE_VERSION = "cargo-volume-discovery-v3"
+DATASET_CACHE_VERSION = "cargo-volume-selection-v4"
 LABELS = {
     "p3a_82": "Baltic P3A_82",
     "australia_shipment_count": "Australia shipment count",
