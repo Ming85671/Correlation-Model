@@ -78,6 +78,25 @@ def test_daily_flow_metrics_keeps_shipment_count_and_volume_separate():
     ]
 
 
+def test_daily_flow_metrics_parses_formatted_cargo_volumes():
+    rows = pd.DataFrame(
+        {
+            "load_start_date": ["2026-01-03", "2026-01-03", "2026-01-04"],
+            "volume": ["10,000 MT", "15,000 tonnes", "20,000"],
+        }
+    )
+
+    result = daily_flow_metrics(
+        rows,
+        "load_start_date",
+        "volume",
+        "australia_shipment_count",
+        "australia_volume",
+    )
+
+    assert result["australia_volume"].tolist() == [25_000, 20_000]
+
+
 def test_monthly_volume_counts_rows_when_value_column_missing():
     rows = pd.DataFrame(
         {

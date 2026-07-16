@@ -18,6 +18,16 @@ def _day_start(values: pd.Series) -> pd.Series:
     return pd.to_datetime(values, errors="coerce", format="mixed").dt.normalize()
 
 
+def _coerce_volume(values: pd.Series) -> pd.Series:
+    """Parse numeric cargo volumes stored with separators or common tonne units."""
+    normalized = (
+        values.astype("string")
+        .str.replace(",", "", regex=False)
+        .str.replace(r"(?i)\s*(?:mt|metric tons?|tonnes?|tons?)\s*$", "", regex=True)
+    )
+    return pd.to_numeric(normalized, errors="coerce")
+
+
 def daily_volume(
     df: pd.DataFrame,
     date_col: str,
@@ -35,7 +45,7 @@ def daily_volume(
     rows = rows.dropna(subset=["day"])
 
     if value_col and value_col in rows.columns:
-        rows[value_col] = pd.to_numeric(rows[value_col], errors="coerce")
+        rows[value_col] = _coerce_volume(rows[value_col])
         grouped = rows.groupby("day", as_index=False)[value_col].sum(min_count=1)
         grouped = grouped.rename(columns={value_col: output_col})
     else:
@@ -62,7 +72,7 @@ def daily_flow_metrics(
     rows = rows.dropna(subset=["day"])
     grouped = rows.groupby("day").size().reset_index(name=count_output_col)
     if value_col and value_col in rows.columns:
-        rows[value_col] = pd.to_numeric(rows[value_col], errors="coerce")
+        rows[value_col] = _coerce_volume(rows[value_col])
         volume = rows.groupby("day", as_index=False)[value_col].sum(min_count=1)
         grouped = grouped.merge(volume, on="day", how="left").rename(
             columns={value_col: volume_output_col}
@@ -88,7 +98,7 @@ def monthly_volume(
     rows = rows.dropna(subset=["month"])
 
     if value_col and value_col in rows.columns:
-        rows[value_col] = pd.to_numeric(rows[value_col], errors="coerce")
+        rows[value_col] = _coerce_volume(rows[value_col])
         grouped = rows.groupby("month", as_index=False)[value_col].sum(min_count=1)
         grouped = grouped.rename(columns={value_col: output_col})
     else:
@@ -115,7 +125,7 @@ def monthly_flow_metrics(
     rows = rows.dropna(subset=["month"])
     grouped = rows.groupby("month").size().reset_index(name=count_output_col)
     if value_col and value_col in rows.columns:
-        rows[value_col] = pd.to_numeric(rows[value_col], errors="coerce")
+        rows[value_col] = _coerce_volume(rows[value_col])
         volume = rows.groupby("month", as_index=False)[value_col].sum(min_count=1)
         grouped = grouped.merge(volume, on="month", how="left").rename(
             columns={value_col: volume_output_col}

@@ -26,10 +26,16 @@ class BalticSource:
 AXS_SCHEMA = "axs"
 AXS_TABLE = "axs"
 AXS_VOLUME_CANDIDATES = (
-    "quantity",
     "cargo_quantity",
     "cargo_qty",
     "cargo_volume",
+    "cargo_tonnage",
+    "cargo_tonnes",
+    "cargo_tons",
+    "cargo_metric_tons",
+    "cargo_mt",
+    "cargo_weight",
+    "quantity",
     "volume",
     "mt",
     "metric_tons",

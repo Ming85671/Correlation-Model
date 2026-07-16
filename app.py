@@ -313,7 +313,7 @@ def render_metric_row(
     for col, series, label in zip(cols[1:], feature_columns, feature_labels, strict=True):
         with col:
             pearson = corr.loc[series, "pearson"] if series in corr.index else pd.NA
-            st.metric(label, format_corr(pearson))
+            st.metric(f"{label} Pearson", format_corr(pearson))
 
 
 def mode_columns(mode: str, flow_columns: list[str]) -> tuple[list[str], str]:
@@ -488,6 +488,9 @@ def render_dashboard() -> None:
         corr_df,
         feature_columns,
         [LABELS[column] for column in active_flow_columns],
+    )
+    st.caption(
+        "Cargo cards show the same-period Pearson correlation with P3A; they do not show cargo totals."
     )
 
     if frequency == "Monthly":
