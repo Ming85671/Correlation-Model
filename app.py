@@ -181,6 +181,11 @@ def complete_history_years(start_date: date, end_date: date) -> int:
     return max(1, years)
 
 
+def max_selectable_months(start_date: date, end_date: date) -> int:
+    """Keep the existing full-year history limit while exposing monthly choices."""
+    return complete_history_years(start_date, end_date) * 12
+
+
 @st.cache_data(ttl=60 * 60 * 6, show_spinner="Loading database series...")
 def load_datasets(
     axs_settings: DatabaseSettings,
@@ -357,15 +362,21 @@ def render_dashboard() -> None:
         st.info(str(exc))
         return
 
-    max_years = complete_history_years(history_start, history_end)
-    default_years = min(10, max_years)
+    max_months = max_selectable_months(history_start, history_end)
+    default_months = min(10 * 12, max_months)
 
     with st.sidebar:
         st.header("Controls")
         frequency = st.radio("Analysis frequency", ["Monthly", "Daily"])
         cargo_measure = st.radio("Cargo measure", list(CARGO_MEASURES))
-        years = st.number_input(
-            "Years", min_value=1, max_value=max_years, value=default_years, step=1
+        months = int(
+            st.number_input(
+                "Months",
+                min_value=1,
+                max_value=max_months,
+                value=default_months,
+                step=1,
+            )
         )
         st.caption(
             f"Shared data history: {history_start:%Y-%m-%d} to {history_end:%Y-%m-%d}."
@@ -387,8 +398,9 @@ def render_dashboard() -> None:
             "A positive lag means cargo occurs first and P3A is compared later."
         )
 
+    # Load one additional year so year-over-year changes remain available.
     start_date = (
-        pd.Timestamp(history_end) - pd.DateOffset(years=int(years) + 1)
+        pd.Timestamp(history_end) - pd.DateOffset(months=months + 12)
     ).date()
 
     try:
@@ -404,7 +416,7 @@ def render_dashboard() -> None:
             st.warning("No daily Baltic observations were returned.")
             return
 
-        display_start = market_days["day"].max() - pd.DateOffset(years=years)
+        display_start = market_days["day"].max() - pd.DateOffset(months=months)
         source_data = daily[daily["day"] >= display_start].reset_index(drop=True)
         active_flow_columns = CARGO_MEASURES[cargo_measure]
         analysis_data = source_data
@@ -427,7 +439,7 @@ def render_dashboard() -> None:
             st.warning("No overlapping monthly observations were returned.")
             return
 
-        display_start = monthly["month"].max() - pd.DateOffset(years=years)
+        display_start = monthly["month"].max() - pd.DateOffset(months=months)
         source_data = monthly[monthly["month"] >= display_start].reset_index(drop=True)
         analysis_data = source_data
         target_column = "p3a_82"
@@ -484,7 +496,7 @@ def render_dashboard() -> None:
             trend_figure(
                 source_data,
                 trend_columns,
-                f"{years}-year monthly trend",
+                f"Monthly trend — last {months} months",
                 LABELS,
                 value_title,
             ),
