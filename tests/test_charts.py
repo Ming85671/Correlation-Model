@@ -20,6 +20,7 @@ def test_standardized_trend_figure_aligns_daily_series_on_a_common_scale():
             "p3a_82_return": "P3A daily return",
             "australia_volume_change": "Australia flow change",
         },
+        connect_gaps_columns=["p3a_82_return"],
     )
 
     assert figure.layout.title.text == "Daily trend"
@@ -30,3 +31,5 @@ def test_standardized_trend_figure_aligns_daily_series_on_a_common_scale():
     ]
     assert round(float(figure.data[0].y[1]), 6) == 0.0
     assert round(float(figure.data[1].y[1]), 6) == 0.0
+    assert figure.data[0].connectgaps is True
+    assert figure.data[1].connectgaps is None

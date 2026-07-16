@@ -13,8 +13,10 @@ def trend_figure(
     value_title: str = "Value",
     time_column: str = "month",
     time_label: str = "Month",
+    connect_gaps_columns: list[str] | None = None,
 ) -> go.Figure:
     labels = labels or {}
+    connect_gaps_columns = connect_gaps_columns or []
     plot_df = df[[time_column, *columns]].copy()
     long_df = plot_df.melt(time_column, var_name="series", value_name="value")
     long_df["series"] = long_df["series"].map(lambda value: labels.get(value, value))
@@ -27,6 +29,12 @@ def trend_figure(
         title=title,
         labels={time_column: time_label, "value": value_title, "series": "Series"},
     )
+    connected_series = {
+        labels.get(column, column) for column in connect_gaps_columns
+    }
+    for trace in fig.data:
+        if trace.name in connected_series:
+            trace.connectgaps = True
     fig.update_layout(
         hovermode="x unified",
         legend_title_text="",
@@ -47,6 +55,7 @@ def standardized_trend_figure(
     labels: dict[str, str] | None = None,
     time_column: str = "day",
     time_label: str = "Day",
+    connect_gaps_columns: list[str] | None = None,
 ) -> go.Figure:
     """Plot series on a common z-score scale while preserving their daily shape.
 
@@ -70,6 +79,7 @@ def standardized_trend_figure(
         "Standard deviations from each series' average",
         time_column,
         time_label,
+        connect_gaps_columns,
     )
 
 

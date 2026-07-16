@@ -513,6 +513,7 @@ def render_dashboard() -> None:
                 [target_column, *feature_columns],
                 "Daily trend: P3A and cargo levels",
                 series_labels,
+                connect_gaps_columns=[target_column],
             ),
             use_container_width=True,
         )
