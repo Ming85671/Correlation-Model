@@ -131,6 +131,27 @@ def _axs_volume_columns(columns: Iterable[str]) -> list[str]:
     return matches
 
 
+def _axs_volume_related_columns(columns: Iterable[str]) -> list[str]:
+    """List source fields that may describe cargo quantity or vessel capacity."""
+    tokens = (
+        "cargo",
+        "quantity",
+        "qty",
+        "volume",
+        "tonnage",
+        "ton",
+        "weight",
+        "dwt",
+        "deadweight",
+        "capacity",
+    )
+    return [
+        column
+        for column in columns
+        if any(token in _normalize(column) for token in tokens)
+    ]
+
+
 def _find_axs_volume_column(columns: Iterable[str]) -> str | None:
     """Find the first cargo-volume field for callers that need one candidate."""
     matches = _axs_volume_columns(columns)
@@ -186,6 +207,7 @@ def _fetch_axs_rows(
 ) -> pd.DataFrame:
     columns = _table_columns(engine, AXS_SCHEMA, AXS_TABLE)
     volume_columns = _axs_volume_columns(columns)
+    related_columns = _axs_volume_related_columns(columns)
     selected = [f"{_quote_identifier(date_col)} AS date"]
     for index, volume_column in enumerate(volume_columns):
         selected.append(f"{_quote_identifier(volume_column)} AS volume_{index}")
@@ -206,6 +228,7 @@ def _fetch_axs_rows(
     if not volume_columns:
         rows.attrs["volume_candidate_stats"] = []
         rows.attrs["selected_volume_column"] = None
+        rows.attrs["volume_related_columns"] = related_columns
         return rows
 
     aliases = [f"volume_{index}" for index in range(len(volume_columns))]
@@ -218,6 +241,7 @@ def _fetch_axs_rows(
             for index, stat in enumerate(candidate_stats)
         ]
         result.attrs["selected_volume_column"] = None
+        result.attrs["volume_related_columns"] = related_columns
         return result
 
     result = rows[["date", selected_alias]].rename(columns={selected_alias: "volume"})
@@ -227,6 +251,7 @@ def _fetch_axs_rows(
         for index, stat in enumerate(candidate_stats)
     ]
     result.attrs["selected_volume_column"] = volume_columns[selected_index]
+    result.attrs["volume_related_columns"] = related_columns
     return result
 
 

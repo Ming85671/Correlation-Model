@@ -50,7 +50,7 @@ CARGO_MEASURES = {
     "Shipment count": SHIPMENT_COUNT_COLUMNS,
     "Cargo volume": VOLUME_FLOW_COLUMNS,
 }
-DATASET_CACHE_VERSION = "cargo-volume-status-v5"
+DATASET_CACHE_VERSION = "cargo-volume-schema-status-v6"
 LABELS = {
     "p3a_82": "Baltic P3A_82",
     "australia_shipment_count": "Australia shipment count",
@@ -193,7 +193,7 @@ def load_datasets(
     baltic_settings: DatabaseSettings,
     start_date: date,
     cache_version: str,
-) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, list[dict[str, int | str]]]]:
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, dict[str, object]]]:
     """Load the source series and return monthly and calendar-day datasets."""
     axs_engine = engine_for(axs_settings)
     baltic_engine = engine_for(baltic_settings)
@@ -258,9 +258,18 @@ def load_datasets(
         ),
     )
     volume_status = {
-        "Australia": australia_raw.attrs.get("volume_candidate_stats", []),
-        "Indonesia": indonesia_raw.attrs.get("volume_candidate_stats", []),
-        "China": china_raw.attrs.get("volume_candidate_stats", []),
+        "Australia": {
+            "candidate_stats": australia_raw.attrs.get("volume_candidate_stats", []),
+            "related_columns": australia_raw.attrs.get("volume_related_columns", []),
+        },
+        "Indonesia": {
+            "candidate_stats": indonesia_raw.attrs.get("volume_candidate_stats", []),
+            "related_columns": indonesia_raw.attrs.get("volume_related_columns", []),
+        },
+        "China": {
+            "candidate_stats": china_raw.attrs.get("volume_candidate_stats", []),
+            "related_columns": china_raw.attrs.get("volume_related_columns", []),
+        },
     }
     return monthly, daily, volume_status
 
@@ -518,7 +527,15 @@ def render_dashboard() -> None:
             with st.expander("Cargo-volume source status"):
                 for flow, status in volume_status.items():
                     st.caption(flow)
-                    st.dataframe(pd.DataFrame(status), hide_index=True)
+                    candidate_stats = status["candidate_stats"]
+                    if candidate_stats:
+                        st.dataframe(pd.DataFrame(candidate_stats), hide_index=True)
+                    else:
+                        related_columns = status["related_columns"]
+                        if related_columns:
+                            st.code(", ".join(related_columns), language=None)
+                        else:
+                            st.caption("No cargo- or capacity-related source fields found.")
 
     if frequency == "Monthly":
         trend_columns, value_title = mode_columns(mode, active_flow_columns)

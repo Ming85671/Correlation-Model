@@ -3,6 +3,7 @@ import pandas as pd
 from src.data_access import (
     AXS_VOLUME_CANDIDATES,
     _axs_volume_columns,
+    _axs_volume_related_columns,
     _best_volume_column,
     _find_axs_volume_column,
     _first_existing_column,
@@ -25,6 +26,12 @@ def test_volume_column_detection_considers_all_matching_columns():
     assert _axs_volume_columns(["quantity", "cargo_volume_mt"]) == [
         "quantity",
         "cargo_volume_mt",
+    ]
+
+
+def test_volume_related_column_detection_includes_dwt_without_using_it_as_volume():
+    assert _axs_volume_related_columns(["date", "vessel_dwt", "commodity"]) == [
+        "vessel_dwt"
     ]
 
 
