@@ -99,6 +99,31 @@ def _first_existing_column(columns: Iterable[str], candidates: Iterable[str]) ->
     return None
 
 
+def _find_axs_volume_column(columns: Iterable[str]) -> str | None:
+    """Find the cargo-volume field, including source-specific unit suffixes."""
+    column_list = list(columns)
+    exact_match = _first_existing_column(column_list, AXS_VOLUME_CANDIDATES)
+    if exact_match:
+        return exact_match
+
+    volume_tokens = (
+        "quantity",
+        "qty",
+        "volume",
+        "tonnage",
+        "tonne",
+        "ton",
+        "metricton",
+        "mt",
+        "weight",
+    )
+    for column in column_list:
+        normalized = _normalize(column)
+        if "cargo" in normalized and any(token in normalized for token in volume_tokens):
+            return column
+    return None
+
+
 def _fetch_axs_rows(
     engine: Engine,
     start_date: date | datetime | str,
@@ -107,7 +132,7 @@ def _fetch_axs_rows(
     params: dict[str, object] | None = None,
 ) -> pd.DataFrame:
     columns = _table_columns(engine, AXS_SCHEMA, AXS_TABLE)
-    volume_col = _first_existing_column(columns, AXS_VOLUME_CANDIDATES)
+    volume_col = _find_axs_volume_column(columns)
     selected = [f"{_quote_identifier(date_col)} AS date"]
     if volume_col:
         selected.append(f"{_quote_identifier(volume_col)} AS volume")

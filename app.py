@@ -50,6 +50,7 @@ CARGO_MEASURES = {
     "Shipment count": SHIPMENT_COUNT_COLUMNS,
     "Cargo volume": VOLUME_FLOW_COLUMNS,
 }
+DATASET_CACHE_VERSION = "cargo-volume-discovery-v3"
 LABELS = {
     "p3a_82": "Baltic P3A_82",
     "australia_shipment_count": "Australia shipment count",
@@ -191,6 +192,7 @@ def load_datasets(
     axs_settings: DatabaseSettings,
     baltic_settings: DatabaseSettings,
     start_date: date,
+    cache_version: str,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Load the source series and return monthly and calendar-day datasets."""
     axs_engine = engine_for(axs_settings)
@@ -404,7 +406,12 @@ def render_dashboard() -> None:
     ).date()
 
     try:
-        monthly, daily = load_datasets(axs_settings, baltic_settings, start_date)
+        monthly, daily = load_datasets(
+            axs_settings,
+            baltic_settings,
+            start_date,
+            DATASET_CACHE_VERSION,
+        )
     except (DataSourceError, SQLAlchemyError, KeyError, ValueError) as exc:
         st.error("Unable to load the analysis datasets.")
         st.info(str(exc))
