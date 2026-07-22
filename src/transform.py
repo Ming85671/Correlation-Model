@@ -18,6 +18,15 @@ def _day_start(values: pd.Series) -> pd.Series:
     return pd.to_datetime(values, errors="coerce", format="mixed").dt.normalize()
 
 
+def _week_start(values: pd.Series) -> pd.Series:
+    """Return the Monday that starts each calendar week."""
+    return (
+        pd.to_datetime(values, errors="coerce", format="mixed")
+        .dt.to_period("W-SUN")
+        .dt.start_time
+    )
+
+
 def _coerce_volume(values: pd.Series) -> pd.Series:
     """Parse numeric cargo volumes stored with separators or common tonne units."""
     normalized = (
@@ -135,6 +144,34 @@ def monthly_flow_metrics(
     return grouped.sort_values("month").reset_index(drop=True)
 
 
+def weekly_flow_metrics(
+    df: pd.DataFrame,
+    date_col: str,
+    value_col: str | None,
+    count_output_col: str,
+    volume_output_col: str,
+) -> pd.DataFrame:
+    """Aggregate shipment-record counts and cargo volumes by Monday-start week."""
+    if df.empty:
+        return pd.DataFrame(columns=["week", count_output_col, volume_output_col])
+    if date_col not in df.columns:
+        raise KeyError(f"Missing required date column: {date_col}")
+
+    rows = df.copy()
+    rows["week"] = _week_start(rows[date_col])
+    rows = rows.dropna(subset=["week"])
+    grouped = rows.groupby("week").size().reset_index(name=count_output_col)
+    if value_col and value_col in rows.columns:
+        rows[value_col] = _coerce_volume(rows[value_col])
+        volume = rows.groupby("week", as_index=False)[value_col].sum(min_count=1)
+        grouped = grouped.merge(volume, on="week", how="left").rename(
+            columns={value_col: volume_output_col}
+        )
+    else:
+        grouped[volume_output_col] = np.nan
+    return grouped.sort_values("week").reset_index(drop=True)
+
+
 def monthly_baltic(df: pd.DataFrame, date_col: str, value_col: str) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame(columns=["month", "p3a_82"])
@@ -151,6 +188,27 @@ def monthly_baltic(df: pd.DataFrame, date_col: str, value_col: str) -> pd.DataFr
     return (
         grouped.rename(columns={value_col: "p3a_82"})
         .sort_values("month")
+        .reset_index(drop=True)
+    )
+
+
+def weekly_baltic(df: pd.DataFrame, date_col: str, value_col: str) -> pd.DataFrame:
+    """Average Baltic observations by Monday-start week."""
+    if df.empty:
+        return pd.DataFrame(columns=["week", "p3a_82"])
+    if date_col not in df.columns:
+        raise KeyError(f"Missing required Baltic date column: {date_col}")
+    if value_col not in df.columns:
+        raise KeyError(f"Missing required Baltic value column: {value_col}")
+
+    rows = df.copy()
+    rows["week"] = _week_start(rows[date_col])
+    rows[value_col] = pd.to_numeric(rows[value_col], errors="coerce")
+    rows = rows.dropna(subset=["week", value_col])
+    grouped = rows.groupby("week", as_index=False)[value_col].mean()
+    return (
+        grouped.rename(columns={value_col: "p3a_82"})
+        .sort_values("week")
         .reset_index(drop=True)
     )
 
@@ -186,6 +244,19 @@ def build_monthly_dataset(
     for frame in (australia, indonesia, china):
         merged = merged.merge(frame, on="month", how="inner")
     return merged.sort_values("month").reset_index(drop=True)
+
+
+def build_weekly_dataset(
+    baltic: pd.DataFrame,
+    australia: pd.DataFrame,
+    indonesia: pd.DataFrame,
+    china: pd.DataFrame,
+) -> pd.DataFrame:
+    """Align weekly Baltic and cargo metrics over their shared calendar weeks."""
+    merged = baltic.copy()
+    for frame in (australia, indonesia, china):
+        merged = merged.merge(frame, on="week", how="inner")
+    return merged.sort_values("week").reset_index(drop=True)
 
 
 def build_daily_dataset(

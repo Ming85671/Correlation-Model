@@ -170,6 +170,25 @@ def test_recommended_min_observations_uses_half_of_a_larger_paired_sample():
     assert result == 100
 
 
+def test_recommended_min_observations_supports_weekly_reliability_floor():
+    rows = pd.DataFrame(
+        {
+            "p3a_82": range(80),
+            "australia_volume": range(80),
+            "indonesia_volume": list(range(40)) + [None] * 40,
+        }
+    )
+
+    result = recommended_min_observations(
+        rows,
+        "p3a_82",
+        ["australia_volume", "indonesia_volume"],
+        "Weekly",
+    )
+
+    assert result == 26
+
+
 def test_top_lag_relationships_ranks_all_series_by_absolute_pearson():
     lag_rows = pd.DataFrame(
         {

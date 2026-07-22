@@ -6,6 +6,7 @@ from src.transform import (
     add_indexed_columns,
     build_daily_dataset,
     build_monthly_dataset,
+    build_weekly_dataset,
     daily_baltic,
     daily_correlation_signals,
     daily_flow_metrics,
@@ -13,6 +14,8 @@ from src.transform import (
     monthly_baltic,
     monthly_flow_metrics,
     monthly_volume,
+    weekly_baltic,
+    weekly_flow_metrics,
 )
 
 
@@ -142,6 +145,82 @@ def test_monthly_baltic_averages_values_by_month():
     assert result.to_dict("records") == [
         {"month": pd.Timestamp("2026-01-01"), "p3a_82": 1050.0},
         {"month": pd.Timestamp("2026-02-01"), "p3a_82": 900.0},
+    ]
+
+
+def test_weekly_metrics_use_monday_to_sunday_calendar_weeks():
+    rows = pd.DataFrame(
+        {
+            "load_start_date": ["2026-01-04", "2026-01-05", "2026-01-11"],
+            "volume": [10_000, 15_000, 20_000],
+        }
+    )
+
+    result = weekly_flow_metrics(
+        rows,
+        "load_start_date",
+        "volume",
+        "australia_shipment_count",
+        "australia_volume",
+    )
+
+    assert result.to_dict("records") == [
+        {
+            "week": pd.Timestamp("2025-12-29"),
+            "australia_shipment_count": 1,
+            "australia_volume": 10_000,
+        },
+        {
+            "week": pd.Timestamp("2026-01-05"),
+            "australia_shipment_count": 2,
+            "australia_volume": 35_000,
+        },
+    ]
+
+
+def test_weekly_baltic_averages_values_within_calendar_weeks():
+    rows = pd.DataFrame(
+        {
+            "date": ["2026-01-05", "2026-01-09", "2026-01-12"],
+            "value": [1000.0, 1100.0, 900.0],
+        }
+    )
+
+    result = weekly_baltic(rows, "date", "value")
+
+    assert result.to_dict("records") == [
+        {"week": pd.Timestamp("2026-01-05"), "p3a_82": 1050.0},
+        {"week": pd.Timestamp("2026-01-12"), "p3a_82": 900.0},
+    ]
+
+
+def test_build_weekly_dataset_keeps_overlapping_weeks_only():
+    baltic = pd.DataFrame(
+        {
+            "week": pd.to_datetime(["2026-01-05", "2026-01-12"]),
+            "p3a_82": [100.0, 110.0],
+        }
+    )
+    australia = pd.DataFrame(
+        {"week": pd.to_datetime(["2026-01-05"]), "australia_volume": [10.0]}
+    )
+    indonesia = pd.DataFrame(
+        {"week": pd.to_datetime(["2026-01-05"]), "indonesia_volume": [20.0]}
+    )
+    china = pd.DataFrame(
+        {"week": pd.to_datetime(["2026-01-05"]), "china_arrivals_volume": [30.0]}
+    )
+
+    result = build_weekly_dataset(baltic, australia, indonesia, china)
+
+    assert result.to_dict("records") == [
+        {
+            "week": pd.Timestamp("2026-01-05"),
+            "p3a_82": 100.0,
+            "australia_volume": 10.0,
+            "indonesia_volume": 20.0,
+            "china_arrivals_volume": 30.0,
+        }
     ]
 
 

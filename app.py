@@ -28,10 +28,13 @@ from src.transform import (
     add_indexed_columns,
     build_daily_dataset,
     build_monthly_dataset,
+    build_weekly_dataset,
     daily_baltic,
     monthly_baltic,
     daily_flow_metrics,
     monthly_flow_metrics,
+    weekly_baltic,
+    weekly_flow_metrics,
 )
 
 
@@ -50,7 +53,7 @@ CARGO_MEASURES = {
     "Shipment count": SHIPMENT_COUNT_COLUMNS,
     "Cargo volume": VOLUME_FLOW_COLUMNS,
 }
-DATASET_CACHE_VERSION = "voy-intake-cargo-volume-v8"
+DATASET_CACHE_VERSION = "weekly-correlation-v9"
 LABELS = {
     "p3a_82": "Baltic P3A_82",
     "australia_shipment_count": "Australia shipment count",
@@ -193,8 +196,8 @@ def load_datasets(
     baltic_settings: DatabaseSettings,
     start_date: date,
     cache_version: str,
-) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, dict[str, object]]]:
-    """Load the source series and return monthly and calendar-day datasets."""
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, dict[str, object]]]:
+    """Load the source series and return monthly, weekly, and daily datasets."""
     axs_engine = engine_for(axs_settings)
     baltic_engine = engine_for(baltic_settings)
 
@@ -232,6 +235,31 @@ def load_datasets(
     monthly = build_monthly_dataset(baltic, australia, indonesia, china)
     monthly = add_indexed_columns(monthly, BASE_COLUMNS)
     monthly = add_change_columns(monthly, BASE_COLUMNS)
+
+    weekly = build_weekly_dataset(
+        weekly_baltic(baltic_raw, "date", "value"),
+        weekly_flow_metrics(
+            australia_raw,
+            "date",
+            value_col if value_col in australia_raw.columns else None,
+            "australia_shipment_count",
+            "australia_volume",
+        ),
+        weekly_flow_metrics(
+            indonesia_raw,
+            "date",
+            value_col if value_col in indonesia_raw.columns else None,
+            "indonesia_shipment_count",
+            "indonesia_volume",
+        ),
+        weekly_flow_metrics(
+            china_raw,
+            "date",
+            value_col if value_col in china_raw.columns else None,
+            "china_arrival_count",
+            "china_arrivals_volume",
+        ),
+    )
 
     daily = build_daily_dataset(
         daily_baltic(baltic_raw, "date", "value"),
@@ -274,7 +302,7 @@ def load_datasets(
             "measurement_basis": china_raw.attrs.get("measurement_basis"),
         },
     }
-    return monthly, daily, volume_status
+    return monthly, weekly, daily, volume_status
 
 
 def format_corr(value: float) -> str:
@@ -386,7 +414,7 @@ def render_dashboard() -> None:
 
     with st.sidebar:
         st.header("Controls")
-        frequency = st.radio("Analysis frequency", ["Monthly", "Daily"])
+        frequency = st.radio("Analysis frequency", ["Monthly", "Weekly", "Daily"])
         cargo_measure = st.radio("Cargo measure", list(CARGO_MEASURES))
         months = int(
             st.number_input(
@@ -400,7 +428,7 @@ def render_dashboard() -> None:
         st.caption(
             f"Shared data history: {history_start:%Y-%m-%d} to {history_end:%Y-%m-%d}."
         )
-        if frequency == "Daily":
+        if frequency != "Monthly":
             mode = None
         else:
             mode = st.radio(
@@ -423,7 +451,7 @@ def render_dashboard() -> None:
     ).date()
 
     try:
-        monthly, daily, volume_status = load_datasets(
+        monthly, weekly, daily, volume_status = load_datasets(
             axs_settings,
             baltic_settings,
             start_date,
@@ -458,6 +486,31 @@ def render_dashboard() -> None:
         p3a_delta = latest_level_change(source_data, "p3a_82")
         dataset_title = "Daily analysis dataset"
         dataset_filename = "correlation_model_daily_dataset.csv"
+    elif frequency == "Weekly":
+        if weekly.empty:
+            st.warning("No overlapping weekly observations were returned.")
+            return
+
+        display_start = weekly["week"].max() - pd.DateOffset(months=months)
+        source_data = weekly[weekly["week"] >= display_start].reset_index(drop=True)
+        analysis_data = source_data
+        target_column = "p3a_82"
+        active_flow_columns = CARGO_MEASURES[cargo_measure]
+        feature_columns = active_flow_columns
+        series_labels = {"p3a_82": LABELS["p3a_82"]}
+        series_labels.update(
+            {column: LABELS[column] for column in active_flow_columns}
+        )
+        lag_column = "lag_weeks"
+        lag_title = "Lag weeks"
+        max_lag = 26
+        latest_p3a_values = source_data["p3a_82"].dropna()
+        latest_p3a = (
+            float(latest_p3a_values.iloc[-1]) if not latest_p3a_values.empty else None
+        )
+        p3a_delta = latest_level_change(source_data, "p3a_82")
+        dataset_title = "Weekly analysis dataset"
+        dataset_filename = "correlation_model_weekly_dataset.csv"
     else:
         if monthly.empty:
             st.warning("No overlapping monthly observations were returned.")
@@ -554,16 +607,20 @@ def render_dashboard() -> None:
             use_container_width=True,
         )
     else:
-        st.subheader("Daily trend")
+        st.subheader(f"{frequency} trend")
         st.caption(
-            f"P3A levels and daily {cargo_measure.lower()} are shown on a standardized scale."
+            f"P3A levels and {frequency.lower()} {cargo_measure.lower()} are shown on a standardized scale."
         )
+        time_column = "day" if frequency == "Daily" else "week"
+        time_label = "Day" if frequency == "Daily" else "Week"
         st.plotly_chart(
             standardized_trend_figure(
                 source_data,
                 [target_column, *feature_columns],
-                "Daily trend: P3A and cargo levels",
+                f"{frequency} trend: P3A and cargo levels",
                 series_labels,
+                time_column=time_column,
+                time_label=time_label,
                 connect_gaps_columns=[target_column],
             ),
             use_container_width=True,
@@ -584,7 +641,7 @@ def render_dashboard() -> None:
         if top_lags.empty:
             st.warning("No lead/lag relationship has enough paired observations.")
         else:
-            lag_unit = "days" if frequency == "Daily" else "months"
+            lag_unit = {"Daily": "days", "Weekly": "weeks", "Monthly": "months"}[frequency]
             top_lags = top_lags.copy()
             top_lags["series"] = top_lags["series"].map(series_labels).fillna(
                 top_lags["series"]

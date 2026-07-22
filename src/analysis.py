@@ -62,11 +62,11 @@ def recommended_min_observations(
 
     The threshold is never optimized for the largest correlation coefficient,
     because doing so would favor noisy small samples. It requires at least half
-    of the smallest usable series, subject to a 60-day or 12-month floor.
+    of the smallest usable series, subject to frequency-specific reliability floors.
     """
-    floors = {"Daily": 60, "Monthly": 12}
+    floors = {"Daily": 60, "Weekly": 26, "Monthly": 12}
     if frequency not in floors:
-        raise ValueError("frequency must be 'Daily' or 'Monthly'")
+        raise ValueError("frequency must be 'Daily', 'Weekly', or 'Monthly'")
 
     counts = [
         len(_paired_numeric(df, target_col, feature_col)) for feature_col in feature_cols

@@ -8,7 +8,7 @@ The first release analyzes:
 - Indonesia coal shipments
 - China coal arrivals excluding China-origin cargo
 
-The dashboard supports monthly and daily correlation views over the selected history. For every
+The dashboard supports monthly, weekly, and daily correlation views over the selected history. For every
 origin/destination flow, choose either shipment count or cargo volume before reading a correlation.
 
 ## Model Scope
@@ -70,21 +70,25 @@ Baltic P3A_82 is discovered from the `market_data` schema by searching for table
 ## Method
 
 - Monthly mode groups AXS shipment and arrival rows by month and averages Baltic P3A_82 by month.
+- Weekly mode groups data into Monday-to-Sunday calendar weeks, sums weekly cargo metrics, and
+  averages Baltic P3A_82 within each week.
 - Daily mode retains calendar-day cargo totals, including zero-flow days. Baltic stays missing on
   weekends and market holidays rather than being forward-filled.
 - Daily correlation compares P3A levels with daily cargo levels. Daily trend charts standardize
   each series so their movements can be compared on one scale.
+- Weekly trend charts use the same standardized scale so P3A and weekly cargo movements can be
+  compared without treating their units as interchangeable.
 - Shipment count and cargo volume are independent measures: a missing volume field remains missing
   and is never substituted with the shipment count.
 - The dashboard uses the overlapping monthly period between all four series.
 - Indexed trend charts set each visible series to 100 in the first month.
 - Change views show month-over-month and year-over-year percentage changes.
 - Lead/lag correlations are calculated over the full automatic range of plus/minus 24 months in
-  monthly mode and plus/minus 60 calendar days in daily mode, then ranked by absolute Pearson
-  correlation across every flow and lag.
+  monthly mode, plus/minus 26 weeks in weekly mode, and plus/minus 60 calendar days in daily mode,
+  then ranked by absolute Pearson correlation across every flow and lag.
 - The minimum reliability threshold is automatic: it uses half of the smallest usable paired
-  sample, with a 60-day or 12-month floor whenever the available data can support that floor. It
-  is never chosen to maximize a correlation coefficient.
+  sample, with a 60-day, 26-week, or 12-month floor whenever the available data can support that
+  floor. It is never chosen to maximize a correlation coefficient.
 
 Positive lag means cargo occurs first and P3A is compared with a later value. Negative lag means
 P3A occurs first and is compared with a later cargo value.
