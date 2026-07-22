@@ -332,13 +332,14 @@ def latest_level_change(df: pd.DataFrame, column: str) -> float | None:
     return None if changes.empty else float(changes.iloc[-1] * 100)
 
 
-def describe_lag(lag: int, unit: str) -> str:
-    """Explain the direction of a feature lag relative to P3A."""
+def compact_lag_description(lag: int, unit: str) -> str:
+    """Return a concise lead/lag description suitable for the ranked table."""
+    unit_label = {"days": "d", "weeks": "wk", "months": "mo"}[unit]
     if lag == 0:
         return "Same period"
     if lag > 0:
-        return f"Cargo leads P3A by {lag} {unit}"
-    return f"P3A leads cargo by {abs(lag)} {unit}"
+        return f"Cargo first, +{lag} {unit_label}"
+    return f"P3A first, +{abs(lag)} {unit_label}"
 
 
 def render_metric_row(
@@ -655,37 +656,51 @@ def render_dashboard() -> None:
             "are one standard deviation above and below that series' average."
         )
 
-    left, right = st.columns([1.15, 0.85])
-    with left:
-        st.plotly_chart(
-            lag_heatmap(lag_df, series_labels, lag_column, lag_title),
-            use_container_width=True,
-        )
-    with right:
-        st.subheader("Top 10 lead/lag relationships")
-        if top_lags.empty:
-            st.warning("No lead/lag relationship has enough paired observations.")
-        else:
-            lag_unit = {"Daily": "days", "Weekly": "weeks", "Monthly": "months"}[frequency]
-            top_lags = top_lags.copy()
-            top_lags["series"] = top_lags["series"].map(series_labels).fillna(
-                top_lags["series"]
-            )
-            top_lags["relationship"] = top_lags[lag_column].map(
-                lambda lag: describe_lag(int(lag), lag_unit)
-            )
-            st.dataframe(
-                top_lags[["series", "relationship", "pearson", "observations"]],
-                use_container_width=True,
-                hide_index=True,
-            )
+    st.plotly_chart(
+        lag_heatmap(lag_df, series_labels, lag_column, lag_title),
+        use_container_width=True,
+    )
 
-        st.caption(
-            f"Automatic reliability threshold: {min_periods} paired observations. "
-            "The top 10 are ranked by absolute Pearson correlation; the sign still shows "
-            "whether the relationship moves together or in opposite directions. Correlation "
-            "is descriptive evidence only, not causation."
+    st.subheader("Top 10 lead/lag relationships")
+    if top_lags.empty:
+        st.warning("No lead/lag relationship has enough paired observations.")
+    else:
+        lag_unit = {"Daily": "days", "Weekly": "weeks", "Monthly": "months"}[frequency]
+        top_lags = top_lags.copy()
+        top_lags["series"] = top_lags["series"].map(series_labels).fillna(
+            top_lags["series"]
         )
+        top_lags["relationship"] = top_lags[lag_column].map(
+            lambda lag: compact_lag_description(int(lag), lag_unit)
+        )
+        top_lags = top_lags.rename(
+            columns={
+                "series": "Series",
+                "relationship": "Lead / lag",
+                "pearson": "Pearson r",
+                "observations": "Pairs",
+            }
+        )
+        st.dataframe(
+            top_lags[["Series", "Lead / lag", "Pearson r", "Pairs"]],
+            column_config={
+                "Series": st.column_config.TextColumn(width="medium"),
+                "Lead / lag": st.column_config.TextColumn(width="medium"),
+                "Pearson r": st.column_config.NumberColumn(format="%.3f", width="small"),
+                "Pairs": st.column_config.NumberColumn(format="%d", width="small"),
+            },
+            height=420,
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.caption("“Cargo first” means cargo leads P3A; “P3A first” means P3A leads cargo.")
+
+    st.caption(
+        f"Automatic reliability threshold: {min_periods} paired observations. "
+        "The top 10 are ranked by absolute Pearson correlation; the sign still shows "
+        "whether the relationship moves together or in opposite directions. Correlation "
+        "is descriptive evidence only, not causation."
+    )
 
     with st.expander(dataset_title, expanded=False):
         st.dataframe(analysis_data, use_container_width=True, hide_index=True)
