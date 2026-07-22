@@ -335,6 +335,31 @@ def daily_correlation_signals(
     return result
 
 
+def weekly_correlation_signals(
+    df: pd.DataFrame,
+    flow_columns: Iterable[str],
+) -> pd.DataFrame:
+    """Add week-over-week percentage-change signals for P3A and cargo flows.
+
+    Zero prior-week cargo values do not have a meaningful percentage change, so
+    their resulting infinite values are retained as missing rather than treated
+    as a large positive signal.
+    """
+    if "week" not in df.columns or "p3a_82" not in df.columns:
+        raise KeyError("Weekly dataset must contain 'week' and 'p3a_82' columns")
+
+    result = df.copy()
+    signal_columns = ["p3a_82", *flow_columns]
+    for column in signal_columns:
+        if column not in result.columns:
+            raise KeyError(f"Missing required flow column: {column}")
+        values = pd.to_numeric(result[column], errors="coerce")
+        result[f"{column}_wow"] = values.pct_change(fill_method=None).replace(
+            [np.inf, -np.inf], np.nan
+        )
+    return result
+
+
 def add_indexed_columns(df: pd.DataFrame, columns: Iterable[str]) -> pd.DataFrame:
     result = df.copy()
     for column in columns:

@@ -15,6 +15,7 @@ from src.transform import (
     monthly_flow_metrics,
     monthly_volume,
     weekly_baltic,
+    weekly_correlation_signals,
     weekly_flow_metrics,
 )
 
@@ -222,6 +223,29 @@ def test_build_weekly_dataset_keeps_overlapping_weeks_only():
             "china_arrivals_volume": 30.0,
         }
     ]
+
+
+def test_weekly_correlation_signals_adds_week_over_week_changes():
+    rows = pd.DataFrame(
+        {
+            "week": pd.date_range("2026-01-05", periods=4, freq="W-MON"),
+            "p3a_82": [100.0, 110.0, 121.0, 108.9],
+            "australia_volume": [200.0, 250.0, 200.0, 0.0],
+            "indonesia_volume": [0.0, 100.0, 110.0, 121.0],
+        }
+    )
+
+    result = weekly_correlation_signals(
+        rows,
+        ["australia_volume", "indonesia_volume"],
+    )
+
+    assert pd.isna(result.loc[0, "p3a_82_wow"])
+    assert result["p3a_82_wow"].dropna().round(4).tolist() == [0.1, 0.1, -0.1]
+    assert pd.isna(result.loc[0, "australia_volume_wow"])
+    assert result["australia_volume_wow"].dropna().round(4).tolist() == [0.25, -0.2, -1.0]
+    assert pd.isna(result.loc[1, "indonesia_volume_wow"])
+    assert result["indonesia_volume_wow"].dropna().round(4).tolist() == [0.1, 0.1]
 
 
 def test_daily_baltic_averages_duplicate_observations_per_day():

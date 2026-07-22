@@ -71,13 +71,14 @@ Baltic P3A_82 is discovered from the `market_data` schema by searching for table
 
 - Monthly mode groups AXS shipment and arrival rows by month and averages Baltic P3A_82 by month.
 - Weekly mode groups data into Monday-to-Sunday calendar weeks, sums weekly cargo metrics, and
-  averages Baltic P3A_82 within each week.
+  averages Baltic P3A_82 within each week. Its correlation and lead/lag analysis use the
+  week-over-week percentage changes of those weekly values.
 - Daily mode retains calendar-day cargo totals, including zero-flow days. Baltic stays missing on
   weekends and market holidays rather than being forward-filled.
 - Daily correlation compares P3A levels with daily cargo levels. Daily trend charts standardize
   each series so their movements can be compared on one scale.
-- Weekly trend charts use the same standardized scale so P3A and weekly cargo movements can be
-  compared without treating their units as interchangeable.
+- Weekly trend charts standardize the week-over-week percentage changes so P3A and cargo
+  movements can be compared without treating their units as interchangeable.
 - Shipment count and cargo volume are independent measures: a missing volume field remains missing
   and is never substituted with the shipment count.
 - The dashboard uses the overlapping monthly period between all four series.

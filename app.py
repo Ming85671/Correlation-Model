@@ -34,6 +34,7 @@ from src.transform import (
     daily_flow_metrics,
     monthly_flow_metrics,
     weekly_baltic,
+    weekly_correlation_signals,
     weekly_flow_metrics,
 )
 
@@ -53,7 +54,7 @@ CARGO_MEASURES = {
     "Shipment count": SHIPMENT_COUNT_COLUMNS,
     "Cargo volume": VOLUME_FLOW_COLUMNS,
 }
-DATASET_CACHE_VERSION = "weekly-correlation-v9"
+DATASET_CACHE_VERSION = "weekly-change-correlation-v10"
 LABELS = {
     "p3a_82": "Baltic P3A_82",
     "australia_shipment_count": "Australia shipment count",
@@ -493,13 +494,16 @@ def render_dashboard() -> None:
 
         display_start = weekly["week"].max() - pd.DateOffset(months=months)
         source_data = weekly[weekly["week"] >= display_start].reset_index(drop=True)
-        analysis_data = source_data
-        target_column = "p3a_82"
         active_flow_columns = CARGO_MEASURES[cargo_measure]
-        feature_columns = active_flow_columns
-        series_labels = {"p3a_82": LABELS["p3a_82"]}
+        analysis_data = weekly_correlation_signals(source_data, active_flow_columns)
+        target_column = "p3a_82_wow"
+        feature_columns = [f"{column}_wow" for column in active_flow_columns]
+        series_labels = {target_column: f"{LABELS['p3a_82']} weekly change"}
         series_labels.update(
-            {column: LABELS[column] for column in active_flow_columns}
+            {
+                f"{column}_wow": f"{LABELS[column]} weekly change"
+                for column in active_flow_columns
+            }
         )
         lag_column = "lag_weeks"
         lag_title = "Lag weeks"
@@ -564,11 +568,22 @@ def render_dashboard() -> None:
         p3a_delta,
         corr_df,
         feature_columns,
-        [LABELS[column] for column in active_flow_columns],
+        [
+            f"{LABELS[column]} weekly change"
+            if frequency == "Weekly"
+            else LABELS[column]
+            for column in active_flow_columns
+        ],
     )
-    st.caption(
-        "Cargo cards show the same-period Pearson correlation with P3A; they do not show source totals."
-    )
+    if frequency == "Weekly":
+        st.caption(
+            "Cargo cards show the same-week Pearson correlation between week-over-week cargo "
+            "changes and P3A changes; they do not show source totals."
+        )
+    else:
+        st.caption(
+            "Cargo cards show the same-period Pearson correlation with P3A; they do not show source totals."
+        )
     if cargo_measure == "Cargo volume":
         unavailable = [
             column
@@ -608,16 +623,26 @@ def render_dashboard() -> None:
         )
     else:
         st.subheader(f"{frequency} trend")
-        st.caption(
-            f"P3A levels and {frequency.lower()} {cargo_measure.lower()} are shown on a standardized scale."
-        )
+        if frequency == "Weekly":
+            st.caption(
+                "P3A and cargo week-over-week percentage changes are shown on a standardized scale."
+            )
+        else:
+            st.caption(
+                f"P3A levels and {frequency.lower()} {cargo_measure.lower()} are shown on a standardized scale."
+            )
         time_column = "day" if frequency == "Daily" else "week"
         time_label = "Day" if frequency == "Daily" else "Week"
+        trend_title = (
+            "Weekly trend: P3A and cargo changes"
+            if frequency == "Weekly"
+            else f"{frequency} trend: P3A and cargo levels"
+        )
         st.plotly_chart(
             standardized_trend_figure(
-                source_data,
+                analysis_data,
                 [target_column, *feature_columns],
-                f"{frequency} trend: P3A and cargo levels",
+                trend_title,
                 series_labels,
                 time_column=time_column,
                 time_label=time_label,
