@@ -157,3 +157,31 @@ def top_lag_relationships(
         .drop(columns="abs_pearson")
         .reset_index(drop=True)
     )
+
+
+def best_positive_cargo_leads(
+    lag_df: pd.DataFrame,
+    lag_column: str,
+) -> pd.DataFrame:
+    """Select each series' strongest positive relationship where cargo leads P3A.
+
+    This filters out same-period and P3A-leading rows, so it directly tests
+    whether a cargo change tends to precede a later P3A change in the same
+    direction. One best valid window is retained per cargo series.
+    """
+    columns = ["series", lag_column, "pearson", "observations"]
+    if lag_df.empty:
+        return pd.DataFrame(columns=columns)
+
+    rows = lag_df.dropna(subset=["pearson"]).copy()
+    rows = rows[(rows[lag_column] > 0) & (rows["pearson"] > 0)]
+    if rows.empty:
+        return pd.DataFrame(columns=columns)
+
+    best = rows.sort_values(
+        ["series", "pearson", "observations", lag_column],
+        ascending=[True, False, False, True],
+    ).groupby("series", as_index=False).first()
+    return best[columns].sort_values(
+        ["pearson", "observations"], ascending=[False, False]
+    ).reset_index(drop=True)

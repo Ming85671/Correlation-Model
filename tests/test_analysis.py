@@ -3,6 +3,7 @@ import math
 import pandas as pd
 
 from src.analysis import (
+    best_positive_cargo_leads,
     best_lag_summary,
     correlation_summary,
     lead_lag_correlations,
@@ -203,3 +204,38 @@ def test_top_lag_relationships_ranks_all_series_by_absolute_pearson():
 
     assert result["series"].tolist() == ["indonesia_volume", "china_arrivals_volume"]
     assert result["pearson"].tolist() == [-0.9, 0.8]
+
+
+def test_best_positive_cargo_leads_keeps_one_cargo_leading_signal_per_series():
+    lag_rows = pd.DataFrame(
+        {
+            "series": [
+                "australia_volume_wow",
+                "australia_volume_wow",
+                "australia_volume_wow",
+                "indonesia_volume_wow",
+                "indonesia_volume_wow",
+                "china_arrivals_volume_wow",
+            ],
+            "lag_weeks": [1, 3, -2, 2, 4, 5],
+            "pearson": [0.25, 0.42, 0.9, -0.3, 0.31, -0.5],
+            "observations": [100, 98, 99, 100, 96, 97],
+        }
+    )
+
+    result = best_positive_cargo_leads(lag_rows, "lag_weeks")
+
+    assert result.to_dict("records") == [
+        {
+            "series": "australia_volume_wow",
+            "lag_weeks": 3,
+            "pearson": 0.42,
+            "observations": 98,
+        },
+        {
+            "series": "indonesia_volume_wow",
+            "lag_weeks": 4,
+            "pearson": 0.31,
+            "observations": 96,
+        },
+    ]

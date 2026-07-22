@@ -79,6 +79,8 @@ Baltic P3A_82 is discovered from the `market_data` schema by searching for table
   each series so their movements can be compared on one scale.
 - Weekly trend charts standardize the week-over-week percentage changes so P3A and cargo
   movements can be compared without treating their units as interchangeable.
+- In weekly mode, the `Best cargo-led P3A signals` table retains one result per flow: the strongest
+  positive relationship where a cargo change occurs 1–26 weeks before a later P3A change.
 - Shipment count and cargo volume are independent measures: a missing volume field remains missing
   and is never substituted with the shipment count.
 - The dashboard uses the overlapping monthly period between all four series.

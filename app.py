@@ -7,6 +7,7 @@ import streamlit as st
 from sqlalchemy.exc import SQLAlchemyError
 
 from src.analysis import (
+    best_positive_cargo_leads,
     correlation_summary,
     lead_lag_correlations,
     recommended_min_observations,
@@ -563,6 +564,11 @@ def render_dashboard() -> None:
         lag_column,
     )
     top_lags = top_lag_relationships(lag_df, lag_column, limit=10)
+    cargo_leads = (
+        best_positive_cargo_leads(lag_df, lag_column)
+        if frequency == "Weekly"
+        else pd.DataFrame()
+    )
 
     render_metric_row(
         latest_p3a,
@@ -660,6 +666,51 @@ def render_dashboard() -> None:
         lag_heatmap(lag_df, series_labels, lag_column, lag_title),
         use_container_width=True,
     )
+
+    if frequency == "Weekly":
+        st.subheader("Best cargo-led P3A signals")
+        st.caption(
+            "For each flow, this selects the strongest positive relationship where this week's "
+            "cargo change comes before a later P3A change."
+        )
+        if cargo_leads.empty:
+            st.warning(
+                "No positive cargo-leading relationship has enough paired observations."
+            )
+        else:
+            cargo_leads = cargo_leads.copy()
+            cargo_leads["series"] = cargo_leads["series"].map(series_labels).fillna(
+                cargo_leads["series"]
+            )
+            cargo_leads["p3a_timing"] = cargo_leads[lag_column].map(
+                lambda lag: f"{int(lag)} weeks later"
+            )
+            cargo_leads = cargo_leads.rename(
+                columns={
+                    "series": "Series",
+                    "p3a_timing": "P3A timing",
+                    "pearson": "Pearson r",
+                    "observations": "Pairs",
+                }
+            )
+            st.dataframe(
+                cargo_leads[["Series", "P3A timing", "Pearson r", "Pairs"]],
+                column_config={
+                    "Series": st.column_config.TextColumn(width="medium"),
+                    "P3A timing": st.column_config.TextColumn(width="small"),
+                    "Pearson r": st.column_config.NumberColumn(
+                        format="%.3f", width="small"
+                    ),
+                    "Pairs": st.column_config.NumberColumn(format="%d", width="small"),
+                },
+                height=160,
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.caption(
+                "A positive Pearson r means cargo and the later P3A change tend to move in the "
+                "same direction. This is an association, not proof of causation."
+            )
 
     st.subheader("Top 10 lead/lag relationships")
     if top_lags.empty:
